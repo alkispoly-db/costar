@@ -62,12 +62,14 @@ This requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) inst
 
 Each script prints a comparison table showing improvement across agent versions.
 
-## Inter-Script State
+## What You'll See in the MLflow UI
 
-Scripts pass state to each other via MLflow tags (no intermediate files):
-
-- **Loop 1 → Loops 2 & 3**: The optimized prompt is tagged with `costar_step=optimized` in the prompt registry. Downstream scripts find it via `find_prompt_by_tag()`.
-- **Loop 2 → Loop 3**: Traces are tagged with `costar_loop=2`. Loop 3 loads them via `mlflow.search_traces(filter_string='tags.costar_loop = "2"')`.
+- **Prompts** tab: "research-agent" with 3 versions — click any version to see diffs between prompt iterations
+- **Traces** with full span trees: planning, tool calls (Wikipedia search), LLM reasoning
+- **Assessments** from both automated scorers and simulated human feedback
+- **Evaluation results** comparing agent versions side by side
+- **Optimization runs** logged by `optimize_prompts()` with baseline → optimized scores
+- **Judge alignment** showing how human feedback refines the judge's instructions
 
 ## File Structure
 
@@ -81,12 +83,3 @@ Scripts pass state to each other via MLflow tags (no intermediate files):
 └── .claude/skills/costar-refine/
     └── SKILL.md             # Skill for Claude Code prompt refinement
 ```
-
-## What You'll See in the MLflow UI
-
-- **Prompts** tab: "research-agent" with 3 versions — click any version to see diffs between prompt iterations
-- **Traces** with full span trees: planning, tool calls (Wikipedia search), LLM reasoning
-- **Assessments** from both automated scorers and simulated human feedback
-- **Evaluation results** comparing agent versions side by side
-- **Optimization runs** logged by `optimize_prompts()` with baseline → optimized scores
-- **Judge alignment** showing how human feedback refines the judge's instructions
