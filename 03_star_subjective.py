@@ -131,7 +131,7 @@ if args.refine == "metaprompt":
     print(f"  Optimized score: {opt_result.final_eval_score}")
 
 elif args.refine == "claude-code":
-    from refine_claude_code import HAS_SOURCES_SCORER, refine_with_claude_code
+    from refine_claude_code import refine_with_claude_code
 
     print("\n" + "=" * 70)
     print("Optimizing prompt for conciseness with Claude Code …")
@@ -146,7 +146,6 @@ elif args.refine == "claude-code":
             "(one short paragraph, no filler)."
         ),
         project_dir=str(Path(__file__).parent),
-        scorer_source=HAS_SOURCES_SCORER,
     )
 
     print(f"\nOptimized prompt registered as v{prompt_v3.version}:")
