@@ -8,16 +8,15 @@ coSTAR uses **STAR loops** (Scenario → Trace → Assess → Refine) to improve
 
 | Loop | Script | What it does |
 |------|--------|-------------|
-| **Loop 1** | `01_star_objective.py` | Refine the agent using `optimize_prompts()` with a deterministic citation scorer (objective criterion — no LLM judge needed) |
+| **Loop 1** | `01_star_objective.py` | Refine the agent with an objective citation scorer |
 | **Loop 2** | `02_star_judge_align.py` | Align a generic conciseness LLM judge to match human preferences (subjective criterion — must align the judge first) |
-| **Loop 3** | `03_star_subjective.py` | Refine the agent for conciseness using `optimize_prompts()` with the aligned judge, while ensuring citations don't regress |
+| **Loop 3** | `03_star_subjective.py` | Refine the agent for conciseness with the aligned judge, while ensuring citations don't regress |
 
-**Key insight**: objective criteria need 1 STAR loop; subjective criteria need 2 (first align the judge, then refine the agent). This is the "coupled" in coSTAR.
 
 ## Prerequisites
 
 ```bash
-pip install mlflow>=3.4 deepagents wikipedia openai litellm
+pip install mlflow>=3.10 deepagents wikipedia openai litellm
 ```
 
 ## Environment Variables
@@ -51,7 +50,7 @@ python 03_star_subjective.py
 
 ### Alternative Refine engine: Claude Code
 
-Loops 1 and 3 support an alternative Refine engine that uses Claude Code in headless mode instead of `MetaPromptOptimizer`:
+By default, Loops 1 and 3 use the `optimize_prompts()` SDK in MLflow for the Refinement step. An alternative is to use Claude Code as the "engine" for refinement. In this setup, Claude Code is equipped with a skill that teaches the basic steps of the coSTAR framework:
 
 ```bash
 python 01_star_objective.py --refine=claude-code
@@ -64,7 +63,7 @@ Each script prints a comparison table showing improvement across agent versions.
 
 ## What You'll See in the MLflow UI
 
-- **Prompts** tab: "research-agent" with 3 versions — click any version to see diffs between prompt iterations
+- **Prompts** tab: "research-agent" with 3 versions (v1: baseline, v2: optimized for citations, v3: optimized for citations + conciseness) — click any version to see diffs between prompt iterations
 - **Traces** with full span trees: planning, tool calls (Wikipedia search), LLM reasoning
 - **Assessments** from both automated scorers and simulated human feedback
 - **Evaluation results** comparing agent versions side by side
