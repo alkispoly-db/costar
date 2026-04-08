@@ -123,7 +123,6 @@ import json
 import sys
 
 import mlflow
-from mlflow.genai import evaluate
 from mlflow.genai.scorers import scorer
 
 from setup import SCENARIOS, create_agent
@@ -148,7 +147,7 @@ with mlflow.start_run(run_name=f"refine-eval-v{{version}}"):
 mlflow.flush_trace_async_logging()
 traces = [mlflow.get_trace(tid) for tid in trace_ids]
 
-result = evaluate(data=traces, scorers=[{scorer_names}])
+result = mlflow.genai.evaluate(data=traces, scorers=[{scorer_names}])
 
 scores = {{}}
 for key, val in result.metrics.items():

@@ -28,7 +28,6 @@ import re
 from pathlib import Path
 
 import mlflow
-from mlflow.genai import evaluate
 from mlflow.genai.scorers import Scorer, scorer
 
 from setup import (
@@ -81,7 +80,7 @@ print(f"  Loaded aligned judge '{aligned_judge.name}' from {judge_file}\n")
 
 def eval_both(traces, label: str) -> tuple[float, float]:
     """Evaluate traces with both has_sources and aligned conciseness judge."""
-    result = evaluate(data=traces, scorers=[has_sources, aligned_judge])
+    result = mlflow.genai.evaluate(data=traces, scorers=[has_sources, aligned_judge])
     cite = result.metrics.get("has_sources/mean", 0.0)
     concise = result.metrics.get("conciseness/mean", 0.0)
     print(f"  {label}  has_sources  = {cite:.0%}")

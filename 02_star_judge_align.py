@@ -21,7 +21,6 @@ from pathlib import Path
 
 import mlflow
 from mlflow.entities import AssessmentSource, AssessmentSourceType
-from mlflow.genai import evaluate
 from mlflow.genai.judges import make_judge
 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
@@ -78,7 +77,7 @@ print(f"  Judge instructions:\n    {conciseness_judge.instructions[:120]}…")
 # Run the judge on all traces via evaluate() — this also re-enables autologging,
 # which captures the judge's LLM calls as traces (useful for debugging).
 print("\nRunning generic judge on all traces …")
-eval_result = evaluate(data=traces, scorers=[conciseness_judge])
+eval_result = mlflow.genai.evaluate(data=traces, scorers=[conciseness_judge])
 
 # Extract per-trace judge verdicts from the evaluation table.
 judge_results = {}

@@ -22,7 +22,6 @@ import re
 from pathlib import Path
 
 import mlflow
-from mlflow.genai import evaluate
 from mlflow.genai.scorers import scorer
 
 from setup import (
@@ -68,7 +67,7 @@ traces_v1 = run_scenarios(agent_v1, SCENARIOS, run_name="agent-v1")
 # ── A: Evaluate v1 ───────────────────────────────────────────────────────
 
 print("\nEvaluating agent v1 …")
-eval_v1 = evaluate(data=traces_v1, scorers=[has_sources])
+eval_v1 = mlflow.genai.evaluate(data=traces_v1, scorers=[has_sources])
 
 v1_citation = eval_v1.metrics["has_sources/mean"]
 print(f"  v1  has_sources = {v1_citation:.0%}")
@@ -134,7 +133,7 @@ traces_v2 = run_scenarios(agent_v2, SCENARIOS, run_name="agent-v2")
 # ── A: Evaluate v2 ───────────────────────────────────────────────────────
 
 print("\nEvaluating agent v2 …")
-eval_v2 = evaluate(data=traces_v2, scorers=[has_sources])
+eval_v2 = mlflow.genai.evaluate(data=traces_v2, scorers=[has_sources])
 
 v2_citation = eval_v2.metrics["has_sources/mean"]
 print(f"  v2  has_sources = {v2_citation:.0%}")
