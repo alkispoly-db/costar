@@ -171,6 +171,25 @@ TRAIN_DATA = [
 
 
 # ---------------------------------------------------------------------------
+# Helper: run agent on every scenario and collect traces
+# ---------------------------------------------------------------------------
+def run_scenarios(agent, scenarios, *, run_name: str):
+    """Invoke *agent* on each scenario and return the resulting traces."""
+    trace_ids = []
+    with mlflow.start_run(run_name=run_name):
+        for scenario in scenarios:
+            agent.invoke(
+                {"messages": [{"role": "user", "content": scenario["question"]}]}
+            )
+            trace_id = mlflow.get_last_active_trace_id()
+            trace_ids.append(trace_id)
+            print(f"  [{run_name}] {scenario['question'][:60]}…  trace={trace_id}")
+
+    mlflow.flush_trace_async_logging()
+    return [mlflow.get_trace(tid) for tid in trace_ids]
+
+
+# ---------------------------------------------------------------------------
 # Helper: find a prompt version by tag
 # ---------------------------------------------------------------------------
 def find_prompt_by_tag(prompt_name, tag_key, tag_value):

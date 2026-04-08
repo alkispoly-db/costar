@@ -25,7 +25,16 @@ import mlflow
 from mlflow.genai import evaluate
 from mlflow.genai.scorers import scorer
 
-from setup import MODEL, PROMPT_NAME, SCENARIOS, TRAIN_DATA, create_agent, predict_fn, prompt_v1
+from setup import (
+    MODEL,
+    PROMPT_NAME,
+    SCENARIOS,
+    TRAIN_DATA,
+    create_agent,
+    predict_fn,
+    prompt_v1,
+    run_scenarios,
+)
 
 parser = argparse.ArgumentParser(description="STAR Loop 1 — Objective Judge")
 parser.add_argument(
@@ -45,25 +54,6 @@ URL_PATTERN = re.compile(r"https?://\S+")
 def has_sources(outputs) -> bool:
     """Check whether the agent's answer contains at least one URL."""
     return bool(URL_PATTERN.search(str(outputs)))
-
-
-# ── Helper: run agent on every scenario and collect traces ────────────────
-
-
-def run_scenarios(agent, scenarios, *, run_name: str):
-    """Invoke *agent* on each scenario and return the resulting traces."""
-    trace_ids = []
-    with mlflow.start_run(run_name=run_name):
-        for scenario in scenarios:
-            agent.invoke(
-                {"messages": [{"role": "user", "content": scenario["question"]}]}
-            )
-            trace_id = mlflow.get_last_active_trace_id()
-            trace_ids.append(trace_id)
-            print(f"  [{run_name}] {scenario['question'][:60]}…  trace={trace_id}")
-
-    mlflow.flush_trace_async_logging()
-    return [mlflow.get_trace(tid) for tid in trace_ids]
 
 
 # ── S & T: Run agent v1 ──────────────────────────────────────────────────

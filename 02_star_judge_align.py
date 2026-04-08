@@ -2,7 +2,7 @@
 STAR Loop 2 — Judge Alignment for Conciseness
 
 Before we can refine the agent for conciseness, we need a judge we trust.
-This script (tags traces with costar_loop=2 for use by Loop 3):
+This script:
 
   1. Loads the optimized prompt v2 from the prompt registry (created by Loop 1).
   2. Runs agent v2 on all scenarios.
@@ -11,9 +11,13 @@ This script (tags traces with costar_loop=2 for use by Loop 3):
   5. Simulates human feedback that disagrees with the judge on specific cases.
   6. Aligns the judge with human preferences using MemAlignOptimizer.
   7. Verifies the aligned judge now matches human opinions.
+  8. Saves the aligned judge to _aligned_judge.json for Loop 3.
 
 Key insight: you can't trust the agent refinement loop until you trust the judge.
 """
+
+import json
+from pathlib import Path
 
 import mlflow
 from mlflow.entities import AssessmentSource, AssessmentSourceType
@@ -199,9 +203,8 @@ for i, trace in enumerate(traces_with_feedback):
 
 print(f"\n  Agreement with humans: {matches_before}/{total} → {matches_after}/{total}")
 
-# ── Tag traces for Loop 3 ─────────────────────────────────────────────────
+# ── Save aligned judge for Loop 3 ─────────────────────────────────────────
 
-for tid in trace_ids:
-    mlflow.set_trace_tag(tid, "costar_loop", "2")
-print(f"\nTagged {len(trace_ids)} traces with costar_loop=2")
+Path("_aligned_judge.json").write_text(json.dumps(aligned_judge.model_dump()))
+print("\nSaved aligned judge to _aligned_judge.json")
 print("Done. The aligned conciseness judge is ready for Loop 3.")

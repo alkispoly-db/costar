@@ -6,7 +6,7 @@ we can safely use it to refine the agent — the "coupled" in coSTAR.
 
 This script:
 
-  1. Rebuilds the aligned conciseness judge from Loop 2 traces.
+  1. Loads the aligned conciseness judge saved by Loop 2.
   2. Loads prompt v2 from the prompt registry.
   3. Runs agent v2 on all scenarios and evaluates with BOTH the citation
      scorer and the aligned conciseness judge via mlflow.genai.evaluate().
@@ -29,11 +29,18 @@ from pathlib import Path
 
 import mlflow
 from mlflow.genai import evaluate
-from mlflow.genai.judges import make_judge
-from mlflow.genai.judges.optimizers import MemAlignOptimizer
-from mlflow.genai.scorers import scorer
+from mlflow.genai.scorers import Scorer, scorer
 
-from setup import MODEL, PROMPT_NAME, SCENARIOS, TRAIN_DATA, create_agent, find_prompt_by_tag, predict_fn
+from setup import (
+    MODEL,
+    PROMPT_NAME,
+    SCENARIOS,
+    TRAIN_DATA,
+    create_agent,
+    find_prompt_by_tag,
+    predict_fn,
+    run_scenarios,
+)
 
 parser = argparse.ArgumentParser(description="STAR Loop 3 — Subjective Judge")
 parser.add_argument(
@@ -55,56 +62,21 @@ def has_sources(outputs) -> bool:
     return bool(URL_PATTERN.search(str(outputs)))
 
 
-# ── Rebuild the aligned conciseness judge ─────────────────────────────────
-# In a real workflow you'd load the registered judge. Here we rebuild it
-# from the traces created in 02_star_judge_align.py so this script is
-# self-contained.
+# ── Load the aligned conciseness judge ────────────────────────────────────
 
 print("=" * 70)
-print("Rebuilding aligned conciseness judge from Loop 2 traces …")
+print("Loading aligned conciseness judge from Loop 2 …")
 print("=" * 70)
 
-conciseness_judge = make_judge(
-    name="conciseness",
-    instructions=(
-        "Evaluate if {{ outputs }} provides a concise, direct answer to "
-        "{{ inputs }}. A concise answer gets to the point quickly without "
-        "unnecessary elaboration, filler phrases, or repeated information.\n\n"
-        "Respond true if the answer is concise, false if it is verbose."
-    ),
-    model=MODEL,
-    feedback_value_type=bool,
-)
+judge_file = Path("_aligned_judge.json")
+if not judge_file.exists():
+    raise RuntimeError("No aligned judge found. Run 02_star_judge_align.py first.")
 
-# Load Loop 2 traces tagged by 02_star_judge_align.py
-loop2_traces = mlflow.search_traces(
-    filter_string='tags.costar_loop = "2"',
-    return_type="list",
-)
-if not loop2_traces:
-    raise RuntimeError("No traces tagged costar_loop=2. Run 02_star_judge_align.py first.")
-
-optimizer = MemAlignOptimizer(reflection_lm=MODEL)
-aligned_judge = conciseness_judge.align(traces=loop2_traces, optimizer=optimizer)
-print(f"  Aligned judge rebuilt from {len(loop2_traces)} traces.\n")
+aligned_judge = Scorer.model_validate_json(judge_file.read_text())
+print(f"  Loaded aligned judge '{aligned_judge.name}' from {judge_file}\n")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
-
-
-def run_scenarios(agent, scenarios, *, run_name: str):
-    """Invoke *agent* on each scenario and return the resulting traces."""
-    trace_ids = []
-    with mlflow.start_run(run_name=run_name):
-        for scenario in scenarios:
-            agent.invoke(
-                {"messages": [{"role": "user", "content": scenario["question"]}]}
-            )
-            tid = mlflow.get_last_active_trace_id()
-            trace_ids.append(tid)
-            print(f"  [{run_name}] {scenario['question'][:60]}…  trace={tid}")
-    mlflow.flush_trace_async_logging()
-    return [mlflow.get_trace(tid) for tid in trace_ids]
 
 
 def eval_both(traces, label: str) -> tuple[float, float]:
