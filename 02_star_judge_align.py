@@ -5,8 +5,8 @@ Before we can refine the agent for conciseness, we need a judge we trust.
 This script:
 
   1. Loads the optimized prompt v2 from the prompt registry (created by Loop 1).
-  2. Runs agent v2 on all scenarios.
-  3. Creates a generic conciseness LLM judge via make_judge().
+  2. Creates a generic conciseness LLM judge via make_judge().
+  3. Runs agent v2 on all scenarios.
   4. Runs the judge on every trace — the judge logs its assessments automatically.
   5. Simulates human feedback that disagrees with the judge on specific cases.
   6. Aligns the judge with human preferences using MemAlignOptimizer.
@@ -32,6 +32,23 @@ prompt_v2 = find_prompt_by_tag(PROMPT_NAME, "costar_step", "optimized")
 print(f"Loaded prompt '{PROMPT_NAME}' v{prompt_v2.version} from registry.")
 print(f"  Template: {prompt_v2.template[:120]}…\n")
 
+# ── Generic conciseness judge ─────────────────────────────────────────────
+
+conciseness_judge = make_judge(
+    name="conciseness",
+    instructions=(
+        "Evaluate if {{ outputs }} provides a concise, direct answer to "
+        "{{ inputs }}. A concise answer gets to the point quickly without "
+        "unnecessary elaboration, filler phrases, or repeated information.\n\n"
+        "Respond true if the answer is concise, false if it is verbose."
+    ),
+    model=MODEL,
+    feedback_value_type=bool,
+)
+
+print(f"Judge: '{conciseness_judge.name}' (model={MODEL})")
+print(f"  Instructions: {conciseness_judge.instructions[:120]}…\n")
+
 # ── S & T: Run agent v2 and collect traces ────────────────────────────────
 
 print("=" * 70)
@@ -53,30 +70,11 @@ with mlflow.start_run(run_name="agent-v2-for-alignment"):
 mlflow.flush_trace_async_logging()
 traces = [mlflow.get_trace(tid) for tid in trace_ids]
 
-# ── A (part 1): Create a generic conciseness judge ───────────────────────
+# ── A (part 1): Run conciseness judge on all traces ──────────────────────
 
 print("\n" + "=" * 70)
-print("Creating generic conciseness judge …")
+print("Running generic judge on all traces …")
 print("=" * 70)
-
-conciseness_judge = make_judge(
-    name="conciseness",
-    instructions=(
-        "Evaluate if {{ outputs }} provides a concise, direct answer to "
-        "{{ inputs }}. A concise answer gets to the point quickly without "
-        "unnecessary elaboration, filler phrases, or repeated information.\n\n"
-        "Respond true if the answer is concise, false if it is verbose."
-    ),
-    model=MODEL,
-    feedback_value_type=bool,
-)
-
-print(f"  Judge model: {MODEL}")
-print(f"  Judge instructions:\n    {conciseness_judge.instructions[:120]}…")
-
-# Run the judge on all traces via evaluate() — this also re-enables autologging,
-# which captures the judge's LLM calls as traces (useful for debugging).
-print("\nRunning generic judge on all traces …")
 eval_result = mlflow.genai.evaluate(data=traces, scorers=[conciseness_judge])
 
 # Extract per-trace judge verdicts from the evaluation table.
