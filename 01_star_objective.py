@@ -18,18 +18,17 @@ Usage:
 """
 
 import argparse
-import re
 from pathlib import Path
 
 import mlflow
-from mlflow.genai.scorers import scorer
 
 from setup import (
-    MODEL,
+    JUDGE_MODEL,
     PROMPT_NAME,
     SCENARIOS,
     TRAIN_DATA,
     create_agent,
+    has_sources,
     predict_fn,
     prompt_v1,
     run_scenarios,
@@ -43,17 +42,6 @@ parser.add_argument(
     help="Which Refine engine to use (default: metaprompt)",
 )
 args = parser.parse_args()
-
-# ── Scorer: deterministic, no LLM needed ─────────────────────────────────
-
-URL_PATTERN = re.compile(r"https?://\S+")
-
-
-@scorer
-def has_sources(outputs) -> bool:
-    """Check whether the agent's answer contains at least one URL."""
-    return bool(URL_PATTERN.search(str(outputs)))
-
 
 # ── S & T: Run agent v1 ──────────────────────────────────────────────────
 
@@ -69,8 +57,8 @@ traces_v1 = run_scenarios(agent_v1, SCENARIOS, run_name="agent-v1")
 print("\nEvaluating agent v1 …")
 eval_v1 = mlflow.genai.evaluate(data=traces_v1, scorers=[has_sources])
 
-v1_citation = eval_v1.metrics["has_sources/mean"]
-print(f"  v1  has_sources = {v1_citation:.0%}")
+v1_cite = eval_v1.metrics["has_sources/mean"]
+print(f"  v1  has_sources = {v1_cite:.0%}")
 
 # ── R: Automated prompt optimization → v2 ────────────────────────────────
 
@@ -82,22 +70,22 @@ if args.refine == "metaprompt":
     print("Optimizing prompt with MetaPromptOptimizer …")
     print("=" * 70)
 
-    result = optimize_prompts(
+    opt_result = optimize_prompts(
         predict_fn=predict_fn,
         train_data=TRAIN_DATA,
         prompt_uris=[prompt_v1.uri],
         optimizer=MetaPromptOptimizer(
-            reflection_model=MODEL,
+            reflection_model=JUDGE_MODEL,
             guidelines="Responses MUST cite sources with Wikipedia URLs.",
         ),
         scorers=[has_sources],
     )
 
-    prompt_v2 = result.optimized_prompts[0]
+    prompt_v2 = opt_result.optimized_prompts[0]
     print(f"\nOptimized prompt registered as v{prompt_v2.version}:")
     print(f"  {prompt_v2.template[:200]}…")
-    print(f"\n  Baseline score: {result.initial_eval_score}")
-    print(f"  Optimized score: {result.final_eval_score}")
+    print(f"\n  Baseline score: {opt_result.initial_eval_score}")
+    print(f"  Optimized score: {opt_result.final_eval_score}")
 
 elif args.refine == "claude-code":
     from refine_claude_code import HAS_SOURCES_SCORER, refine_with_claude_code
@@ -109,7 +97,7 @@ elif args.refine == "claude-code":
     prompt_v2 = refine_with_claude_code(
         prompt_name=PROMPT_NAME,
         prompt_version=prompt_v1.version,
-        scores={"has_sources": v1_citation},
+        scores={"has_sources": v1_cite},
         goal="Responses MUST cite sources with Wikipedia URLs.",
         project_dir=str(Path(__file__).parent),
         scorer_source=HAS_SOURCES_SCORER,
@@ -135,8 +123,8 @@ traces_v2 = run_scenarios(agent_v2, SCENARIOS, run_name="agent-v2")
 print("\nEvaluating agent v2 …")
 eval_v2 = mlflow.genai.evaluate(data=traces_v2, scorers=[has_sources])
 
-v2_citation = eval_v2.metrics["has_sources/mean"]
-print(f"  v2  has_sources = {v2_citation:.0%}")
+v2_cite = eval_v2.metrics["has_sources/mean"]
+print(f"  v2  has_sources = {v2_cite:.0%}")
 
 # ── Side-by-side comparison ──────────────────────────────────────────────
 
@@ -146,8 +134,8 @@ print("=" * 70)
 print(f"  {'Metric':<20} {'v1':>8} {'v2':>8} {'Delta':>8}")
 print(f"  {'-'*20} {'-'*8} {'-'*8} {'-'*8}")
 print(
-    f"  {'has_sources':<20} {v1_citation:>7.0%} {v2_citation:>7.0%}"
-    f" {v2_citation - v1_citation:>+7.0%}"
+    f"  {'has_sources':<20} {v1_cite:>7.0%} {v2_cite:>7.0%}"
+    f" {v2_cite - v1_cite:>+7.0%}"
 )
 print("\nDone. Inspect runs in the MLflow UI under the 'costar-research-agent' experiment.")
 print("Browse the 'Prompts' tab to see the 'research-agent' prompt with v1 and v2 diffs.")

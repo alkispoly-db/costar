@@ -5,10 +5,13 @@ Sets up the MLflow experiment, Deep Agent factory, tools, prompt registry,
 and evaluation scenarios. Run this module before the numbered scripts.
 """
 
+import re
+
 import wikipedia
 
 import mlflow
 from deepagents import create_deep_agent
+from mlflow.genai.scorers import scorer
 
 # ---------------------------------------------------------------------------
 # MLflow setup
@@ -25,7 +28,7 @@ PROMPT_NAME = "research-agent"
 # Models
 # ---------------------------------------------------------------------------
 AGENT_MODEL = "openai:gpt-4.1-mini"  # Deep Agent uses "provider:model" format
-MODEL = "openai:/gpt-4.1-mini"  # MLflow judges use "openai:/model" format
+JUDGE_MODEL = "openai:/gpt-4.1-mini"  # MLflow judges/optimizers use "openai:/model" format
 
 # ---------------------------------------------------------------------------
 # Wikipedia search tool (no API key needed)
@@ -70,7 +73,7 @@ def create_agent(system_prompt: str):
 # ---------------------------------------------------------------------------
 try:
     prompt_v1 = mlflow.genai.load_prompt(PROMPT_NAME, version=1)
-except Exception:
+except mlflow.MlflowException:
     prompt_v1 = mlflow.genai.register_prompt(
         name=PROMPT_NAME,
         template=SYSTEM_PROMPT_V1,
@@ -88,11 +91,9 @@ def predict_fn(question: str) -> str:
     loading the prompt each time picks up the candidate template being tested.
     """
     prompt = mlflow.genai.load_prompt(PROMPT_NAME)
-    agent = create_deep_agent(
-        model=AGENT_MODEL, tools=[search_wikipedia], system_prompt=prompt.template
-    )
-    result = agent.invoke({"messages": [{"role": "user", "content": question}]})
-    return result["messages"][-1].content
+    agent = create_agent(prompt.template)
+    response = agent.invoke({"messages": [{"role": "user", "content": question}]})
+    return response["messages"][-1].content
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +169,18 @@ TRAIN_DATA = [
     {"inputs": {"question": s["question"]}, "outputs": ", ".join(s["expected_facts"])}
     for s in SCENARIOS
 ]
+
+
+# ---------------------------------------------------------------------------
+# Scorer: deterministic, no LLM needed
+# ---------------------------------------------------------------------------
+URL_PATTERN = re.compile(r"https?://\S+")
+
+
+@scorer
+def has_sources(outputs) -> bool:
+    """Check whether the agent's answer contains at least one URL."""
+    return bool(URL_PATTERN.search(str(outputs)))
 
 
 # ---------------------------------------------------------------------------

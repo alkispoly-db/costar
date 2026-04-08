@@ -24,19 +24,19 @@ Usage:
 """
 
 import argparse
-import re
 from pathlib import Path
 
 import mlflow
-from mlflow.genai.scorers import Scorer, scorer
+from mlflow.genai.scorers import Scorer
 
 from setup import (
-    MODEL,
+    JUDGE_MODEL,
     PROMPT_NAME,
     SCENARIOS,
     TRAIN_DATA,
     create_agent,
     find_prompt_by_tag,
+    has_sources,
     predict_fn,
     run_scenarios,
 )
@@ -49,17 +49,6 @@ parser.add_argument(
     help="Which Refine engine to use (default: metaprompt)",
 )
 args = parser.parse_args()
-
-# ── Scorers ───────────────────────────────────────────────────────────────
-
-URL_PATTERN = re.compile(r"https?://\S+")
-
-
-@scorer
-def has_sources(outputs) -> bool:
-    """Check whether the agent's answer contains at least one URL."""
-    return bool(URL_PATTERN.search(str(outputs)))
-
 
 # ── Load the aligned conciseness judge ────────────────────────────────────
 
@@ -126,7 +115,7 @@ if args.refine == "metaprompt":
         train_data=TRAIN_DATA,
         prompt_uris=[prompt_v2.uri],
         optimizer=MetaPromptOptimizer(
-            reflection_model=MODEL,
+            reflection_model=JUDGE_MODEL,
             guidelines=(
                 "Responses must cite sources with URLs AND be concise "
                 "(one short paragraph, no filler)."
