@@ -50,7 +50,9 @@ python 03_star_subjective.py
 
 ### Alternative Refine engine: Claude Code
 
-By default, Loops 1 and 3 use the `optimize_prompts()` SDK in MLflow for the Refinement step. An alternative is to use Claude Code as the "engine" for refinement. In this setup, Claude Code is equipped with a skill that teaches the basic steps of the coSTAR framework:
+By default, Loops 1 and 3 use the `optimize_prompts()` SDK in MLflow for the Refinement step. `optimize_prompts()` works by rewriting the prompt text, assuming that tools, agent logic, and everything else are fixed.
+
+An alternative is to use Claude Code as a more general optimization engine. Claude Code can read traces, inspect failure patterns, and go beyond prompt rewrites — for example, it can rewrite existing tools, add new tools to the agent, or rewire the agent's logic. In this setup, Claude Code is equipped with a skill that teaches the basic steps of the coSTAR framework:
 
 ```bash
 python 01_star_objective.py --refine=claude-code
