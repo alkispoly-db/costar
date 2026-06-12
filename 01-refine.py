@@ -48,11 +48,12 @@ opt = optimize_prompts(
 new_prompt = opt.optimized_prompts[0]
 
 # ── Final eval of the optimized prompt under the "01-refine" run ──────────
-# Generate fresh traces with the new prompt, then evaluate them. Wrapping the
-# evaluate() call in a named run is what gets the eval logged as "01-refine".
+# Generate fresh traces with the new prompt, then evaluate them — both the
+# traces and the eval metric live on a single "01-refine" run. run_scenarios
+# is called with run_name=None so it logs into the active run we open here.
 agent = create_agent(new_prompt.template)
-traces = run_scenarios(agent, run_name="01-refine")
 with mlflow.start_run(run_name="01-refine"):
+    traces = run_scenarios(agent)
     result = mlflow.genai.evaluate(data=traces, scorers=[has_sources])
 
 # ── Report ────────────────────────────────────────────────────────────────

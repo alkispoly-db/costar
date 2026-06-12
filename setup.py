@@ -48,6 +48,9 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
     to cite a source, construct the Wikipedia URL from the page title
     (e.g. https://en.wikipedia.org/wiki/Page_Title).
     """
+    import time
+
+    import requests
     import wikipedia
 
     # The `wikipedia` library defaults to http://, which Wikipedia 301-redirects
@@ -55,14 +58,48 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
     wikipedia.wikipedia.API_URL = "https://en.wikipedia.org/w/api.php"
     wikipedia.wikipedia.USER_AGENT = "costar-demo/1.0 (https://github.com/alkispoly-db/costar)"
 
-    titles = wikipedia.search(query, results=max_results)
+    # A transient/empty Wikipedia API response makes search()/page() raise a
+    # JSONDecodeError ("Expecting value: line 1 column 1"), a RequestException /
+    # ValueError subclass. Left to propagate it crashes the whole agent run
+    # mid-demo, so every API call here degrades gracefully instead of raising.
+    titles = None
+    for delay in (0.5, 1.0):
+        try:
+            titles = wikipedia.search(query, results=max_results)
+            break
+        except (requests.exceptions.RequestException, ValueError):
+            time.sleep(delay)
+    if titles is None:
+        # Still failing after retries — degrade instead of crashing the agent.
+        try:
+            titles = wikipedia.search(query, results=max_results)
+        except (requests.exceptions.RequestException, ValueError):
+            return "No results found."
+
     results = []
     for title in titles:
         try:
             page = wikipedia.page(title, auto_suggest=False)
             results.append(f"Title: {page.title}\nSummary: {page.summary[:500]}\n")
-        except (wikipedia.exceptions.DisambiguationError, wikipedia.exceptions.PageError):
+        except (
+            wikipedia.exceptions.DisambiguationError,
+            wikipedia.exceptions.PageError,
+        ):
             continue
+        except (requests.exceptions.RequestException, ValueError):
+            # Transient API junk for this title (JSONDecodeError etc.): one quick
+            # retry, then skip the title rather than crash the agent.
+            try:
+                time.sleep(0.5)
+                page = wikipedia.page(title, auto_suggest=False)
+                results.append(f"Title: {page.title}\nSummary: {page.summary[:500]}\n")
+            except (
+                wikipedia.exceptions.DisambiguationError,
+                wikipedia.exceptions.PageError,
+                requests.exceptions.RequestException,
+                ValueError,
+            ):
+                continue
     return "\n---\n".join(results) if results else "No results found."
 
 
@@ -412,24 +449,38 @@ def get_has_sources_scorer():
 # ---------------------------------------------------------------------------
 # Helper: run agent on every scenario and collect traces
 # ---------------------------------------------------------------------------
-def run_scenarios(agent, scenarios=None, *, run_name: str):
+def run_scenarios(agent, scenarios=None, *, run_name: str = None):
     """Invoke *agent* on each scenario and return the resulting traces.
 
     When *scenarios* is omitted, questions are sourced from the eval dataset
     (the runtime source of truth); existing callers may still pass an explicit
     scenario list.
+
+    When *run_name* is None, traces are logged into the currently-active MLflow
+    run (the caller opens its own run); otherwise a new run named *run_name* is
+    opened, as before.
     """
     if scenarios is None:
         scenarios = load_scenarios()
-    trace_ids = []
-    with mlflow.start_run(run_name=run_name):
+    label = run_name or "run_scenarios"
+
+    def _invoke_all():
+        trace_ids = []
         for scenario in scenarios:
             agent.invoke(
                 {"messages": [{"role": "user", "content": scenario["question"]}]}
             )
             trace_id = mlflow.get_last_active_trace_id()
             trace_ids.append(trace_id)
-            print(f"  [{run_name}] {scenario['question'][:60]}…  trace={trace_id}")
+            print(f"  [{label}] {scenario['question'][:60]}…  trace={trace_id}")
+        return trace_ids
+
+    if run_name is None:
+        # No run_name: log under whatever run the caller already opened.
+        trace_ids = _invoke_all()
+    else:
+        with mlflow.start_run(run_name=run_name):
+            trace_ids = _invoke_all()
 
     mlflow.flush_trace_async_logging()
     return [mlflow.get_trace(tid) for tid in trace_ids]
