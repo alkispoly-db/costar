@@ -13,7 +13,7 @@ from pathlib import Path
 import mlflow
 from mlflow.genai.scorers import Scorer
 
-from setup import SCENARIOS, create_agent, has_sources, run_scenarios
+from setup import create_agent, has_sources, run_scenarios
 
 # Load the aligned conciseness judge if available
 judge_file = Path("_aligned_judge.json")
@@ -25,7 +25,7 @@ if judge_file.exists():
 prompt_name, version = sys.argv[1], int(sys.argv[2])
 prompt = mlflow.genai.load_prompt(prompt_name, version=version)
 traces = run_scenarios(
-    create_agent(prompt.template), SCENARIOS, run_name=f"refine-eval-v{version}"
+    create_agent(prompt.template), run_name=f"refine-eval-v{version}"
 )
 result = mlflow.genai.evaluate(data=traces, scorers=scorers)
 scores = {

@@ -24,7 +24,11 @@ from mlflow.entities import AssessmentSource, AssessmentSourceType
 from mlflow.genai.judges import make_judge
 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
-from setup import JUDGE_MODEL, PROMPT_NAME, SCENARIOS, create_agent, find_prompt_by_tag, run_scenarios
+from setup import JUDGE_MODEL, PROMPT_NAME, create_agent, find_prompt_by_tag, load_scenarios, run_scenarios
+
+# Source scenarios from the eval dataset; this list is reused below so the
+# per-trace human-feedback rationales stay index-aligned with the traces.
+scenarios = load_scenarios()
 
 # ── Load the v2 prompt from the registry (created by 01_star_objective.py) ──
 
@@ -56,7 +60,7 @@ print("STAR Loop 2 — Running agent v2 to generate traces for judge alignment")
 print("=" * 70)
 
 agent_v2 = create_agent(prompt_v2.template)
-traces = run_scenarios(agent_v2, SCENARIOS, run_name="agent-v2-for-alignment")
+traces = run_scenarios(agent_v2, scenarios, run_name="agent-v2-for-alignment")
 
 # ── A (part 1): Run conciseness judge on all traces ──────────────────────
 
@@ -127,7 +131,7 @@ for i, trace in enumerate(traces):
         source=human_source,
         rationale=(
             f"Human {'agrees' if human_val == judge_val else 'disagrees'} "
-            f"with judge. Question: {SCENARIOS[i]['question'][:50]}…"
+            f"with judge. Question: {scenarios[i]['question'][:50]}…"
         ),
     )
     print(f"  trace {i:>2}: judge={str(judge_val):<5}  human={str(human_val):<5}  [{agrees}]")

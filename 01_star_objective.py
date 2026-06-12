@@ -25,9 +25,8 @@ import mlflow
 from setup import (
     JUDGE_MODEL,
     PROMPT_NAME,
-    SCENARIOS,
-    TRAIN_DATA,
     create_agent,
+    get_train_data,
     has_sources,
     predict_fn,
     prompt_v1,
@@ -50,7 +49,7 @@ print("STAR Loop 1 — Agent v1 (baseline)")
 print("=" * 70)
 
 agent_v1 = create_agent(prompt_v1.template)
-traces_v1 = run_scenarios(agent_v1, SCENARIOS, run_name="agent-v1")
+traces_v1 = run_scenarios(agent_v1, run_name="agent-v1")
 
 # ── A: Evaluate v1 ───────────────────────────────────────────────────────
 
@@ -72,7 +71,7 @@ if args.refine == "metaprompt":
 
     opt_result = optimize_prompts(
         predict_fn=predict_fn,
-        train_data=TRAIN_DATA,
+        train_data=get_train_data(),
         prompt_uris=[prompt_v1.uri],
         optimizer=MetaPromptOptimizer(
             reflection_model=JUDGE_MODEL,
@@ -115,7 +114,7 @@ print("STAR Loop 1 — Agent v2 (optimized prompt)")
 print("=" * 70)
 
 agent_v2 = create_agent(prompt_v2.template)
-traces_v2 = run_scenarios(agent_v2, SCENARIOS, run_name="agent-v2")
+traces_v2 = run_scenarios(agent_v2, run_name="agent-v2")
 
 # ── A: Evaluate v2 ───────────────────────────────────────────────────────
 

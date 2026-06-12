@@ -28,8 +28,14 @@ export OPENAI_API_KEY="sk-..."      # Required for the LLM judge and Deep Agent
 ## Start MLflow
 
 ```bash
-mlflow server --host 0.0.0.0 --port 5000
+mlflow server --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000
 ```
+
+A SQL backend is required: the scenarios are stored in an MLflow GenAI
+evaluation dataset (`research-scenarios`), which is not available on the
+default file store.
+
+Editing the `SCENARIOS` list in `setup.py` after the dataset exists only inserts/updates records by input-hash via `merge_records` — removing a scenario from the list will **not** delete it from `research-scenarios` (use `delete_records` for that).
 
 Then open http://localhost:5000 to see traces, evaluations, and feedback.
 

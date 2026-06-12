@@ -32,10 +32,9 @@ from mlflow.genai.scorers import Scorer
 from setup import (
     JUDGE_MODEL,
     PROMPT_NAME,
-    SCENARIOS,
-    TRAIN_DATA,
     create_agent,
     find_prompt_by_tag,
+    get_train_data,
     has_sources,
     predict_fn,
     run_scenarios,
@@ -89,7 +88,7 @@ print("STAR Loop 3 — Agent v2 (citations, no conciseness instructions)")
 print("=" * 70)
 
 agent_v2 = create_agent(prompt_v2.template)
-traces_v2 = run_scenarios(agent_v2, SCENARIOS, run_name="agent-v2-loop3")
+traces_v2 = run_scenarios(agent_v2, run_name="agent-v2-loop3")
 
 # ── A: Evaluate v2 with BOTH scorers ─────────────────────────────────────
 
@@ -112,7 +111,7 @@ if args.refine == "metaprompt":
 
     opt_result = optimize_prompts(
         predict_fn=predict_fn,
-        train_data=TRAIN_DATA,
+        train_data=get_train_data(),
         prompt_uris=[prompt_v2.uri],
         optimizer=MetaPromptOptimizer(
             reflection_model=JUDGE_MODEL,
@@ -158,7 +157,7 @@ print("STAR Loop 3 — Agent v3 (citations + conciseness)")
 print("=" * 70)
 
 agent_v3 = create_agent(prompt_v3.template)
-traces_v3 = run_scenarios(agent_v3, SCENARIOS, run_name="agent-v3")
+traces_v3 = run_scenarios(agent_v3, run_name="agent-v3")
 
 # ── A: Evaluate v3 with BOTH scorers ─────────────────────────────────────
 
