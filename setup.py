@@ -12,6 +12,8 @@ import re
 import mlflow
 from mlflow.genai.scorers import scorer
 
+from conciseness_judge import CONCISENESS_INSTRUCTIONS, build_conciseness_judge
+
 # ---------------------------------------------------------------------------
 # MLflow setup
 # ---------------------------------------------------------------------------
@@ -296,15 +298,11 @@ def has_sources(outputs) -> bool:
 # ---------------------------------------------------------------------------
 # Scorer: conciseness LLM judge, registered as a first-class experiment scorer
 # ---------------------------------------------------------------------------
-# Instructions match 02_star_judge_align.py verbatim so the registered scorer
-# behaves identically to the inline judge used during alignment.
+# CONCISENESS_INSTRUCTIONS and the judge construction now live in
+# conciseness_judge.py (single source of truth, imported above); the
+# constant is re-exported here so existing `from setup import
+# CONCISENESS_INSTRUCTIONS` callers keep working.
 CONCISENESS_SCORER_NAME = "conciseness"
-CONCISENESS_INSTRUCTIONS = (
-    "Evaluate if {{ outputs }} provides a concise, direct answer to "
-    "{{ inputs }}. A concise answer gets to the point quickly without "
-    "unnecessary elaboration, filler phrases, or repeated information.\n\n"
-    "Respond true if the answer is concise, false if it is verbose."
-)
 
 _conciseness_registered = False
 
@@ -323,7 +321,6 @@ def get_conciseness_scorer():
     """
     # Imported locally (like get_scenario_dataset) so `import setup` stays light
     # and doesn't pull in the judge stack just to use the dataset helpers.
-    from mlflow.genai.judges import make_judge
     from mlflow.genai.scorers import get_scorer
     from mlflow.exceptions import MlflowException
     from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST, ErrorCode
@@ -335,12 +332,7 @@ def get_conciseness_scorer():
     except MlflowException as e:
         if e.error_code != ErrorCode.Name(RESOURCE_DOES_NOT_EXIST):
             raise
-        judge = make_judge(
-            name=CONCISENESS_SCORER_NAME,
-            instructions=CONCISENESS_INSTRUCTIONS,
-            model=JUDGE_MODEL,
-            feedback_value_type=bool,
-        )
+        judge = build_conciseness_judge(JUDGE_MODEL)
         # Guard against registering a new version if a concurrent miss + register
         # races within this process (register() versions on each call).
         global _conciseness_registered
@@ -452,3 +444,46 @@ def find_prompt_by_tag(prompt_name, tag_key, tag_value):
         if pv.tags.get(tag_key) == tag_value:
             return pv
     raise RuntimeError(f"No '{prompt_name}' version with tag {tag_key}={tag_value}")
+
+
+# ---------------------------------------------------------------------------
+# Convention-based lookup helpers
+# ---------------------------------------------------------------------------
+# The per-phase demo scripts hand work off to each other "by convention": a
+# phase writes a run under a well-known run_name, and the next phase looks that
+# run (and its traces) back up by name rather than threading a run id through.
+# These helpers are import-light and side-effect-free so any phase script can
+# call them without seeding or registering anything.
+def latest_run_id(run_name):
+    """Return the most-recent run id named *run_name* in the experiment.
+
+    Returns None if no such run exists.
+    """
+    runs = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        filter_string=f"attributes.run_name = '{run_name}'",
+        order_by=["attributes.start_time DESC"],
+        max_results=1,
+        output_format="list",
+    )
+    return runs[0].info.run_id if runs else None
+
+
+def traces_for_run(run_name):
+    """Return the Trace objects logged under the latest run named *run_name*.
+
+    The list is suitable to pass directly to
+    ``mlflow.genai.evaluate(data=...)`` (which accepts a list of traces, as the
+    numbered scripts do). Returns an empty list if the run is absent.
+    """
+    run_id = latest_run_id(run_name)
+    if run_id is None:
+        return []
+    # return_type="list" yields Trace objects (vs the default pandas DataFrame);
+    # run_id alone scopes the search to that run's experiment, no location needed.
+    return mlflow.search_traces(run_id=run_id, return_type="list")
+
+
+def latest_prompt():
+    """Return the latest registered version of the research-agent prompt."""
+    return mlflow.genai.load_prompt(PROMPT_NAME)
