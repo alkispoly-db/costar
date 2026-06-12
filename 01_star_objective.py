@@ -1,14 +1,14 @@
 """
 STAR Loop 1 — Agent Refinement with an Objective Judge (Citation Quality)
 
-This script demonstrates the simplest coSTAR loop: refining an agent using a
-deterministic scorer that requires no LLM judge.
+This script demonstrates the simplest coSTAR loop: refining an agent using an
+objective "has_sources" LLM judge that checks for cited URLs.
 
 Flow:
   S — Load 15 Q&A scenarios
   T — Run agent v1 on all scenarios, auto-capture traces
-  A — Score each trace with a deterministic "has_sources" scorer that checks
-      whether the answer contains URLs.
+  A — Score each trace with the registered "has_sources" judge that checks
+      whether the answer cites at least one http/https URL.
   R — Use optimize_prompts() with MetaPromptOptimizer to automatically generate
       an improved prompt (v2). Re-run and compare scores side by side.
 
@@ -27,14 +27,18 @@ from setup import (
     PROMPT_NAME,
     create_agent,
     get_conciseness_scorer,
+    get_has_sources_scorer,
     get_train_data,
-    has_sources,
     predict_fn,
     prompt_v1,
     run_scenarios,
 )
 
-# Registered experiment scorer; reused for both v1 and v2 evaluation below.
+# Registered experiment scorers; reused for both v1 and v2 evaluation below.
+# Loop 1 uses the registered has_sources judge (not the deterministic regex
+# has_sources @scorer) because custom @scorer functions can't be registered on
+# OSS MLflow.
+has_sources = get_has_sources_scorer()
 conciseness = get_conciseness_scorer()
 
 parser = argparse.ArgumentParser(description="STAR Loop 1 — Objective Judge")
@@ -80,10 +84,11 @@ if args.refine == "metaprompt":
         prompt_uris=[prompt_v1.uri],
         optimizer=MetaPromptOptimizer(
             reflection_model=JUDGE_MODEL,
-            guidelines="Responses MUST cite sources with Wikipedia URLs.",
+            guidelines="Responses MUST cite sources with URLs.",
         ),
-        # Loop 1 optimizes the objective metric only; conciseness is reported
-        # above/below as the pre-alignment read, not an optimization target.
+        # Loop 1 optimizes against the registered has_sources judge only;
+        # conciseness is reported above/below as the pre-alignment read, not an
+        # optimization target.
         scorers=[has_sources],
     )
 

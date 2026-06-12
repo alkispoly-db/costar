@@ -276,8 +276,14 @@ def get_train_data():
 
 
 # ---------------------------------------------------------------------------
-# Scorer: deterministic, no LLM needed
+# Scorer: deterministic has_sources, no LLM needed
 # ---------------------------------------------------------------------------
+# This is the deterministic regex has_sources scorer, used by loop 3
+# (03_star_subjective.py) and .claude/skills/costar-refine/eval.py. It is
+# distinct from the registered "has_sources" judge below (get_has_sources_scorer),
+# which loop 1 uses. Custom @scorer functions can't be registered on OSS MLflow,
+# so loop 1 needs the judge form; the regex form is kept for the loops/eval that
+# call it directly.
 URL_PATTERN = re.compile(r"https?://\S+")
 
 
@@ -345,6 +351,69 @@ def get_conciseness_scorer():
         _conciseness_registered = True
         return judge.register(
             name=CONCISENESS_SCORER_NAME, experiment_id=experiment.experiment_id
+        )
+
+
+# ---------------------------------------------------------------------------
+# Scorer: has_sources LLM judge, registered as a first-class experiment scorer
+# ---------------------------------------------------------------------------
+# The registered "has_sources" judge (loop 1) is distinct from the deterministic
+# regex has_sources @scorer above (loops 3/eval): custom @scorer functions can't
+# be registered on OSS MLflow, so loop 1 uses this judge form. The judge's
+# registered NAME is "has_sources", so its eval metric key is "has_sources/mean"
+# — the same key loop 1 already prints, so reporting code stays unchanged.
+HAS_SOURCES_SCORER_NAME = "has_sources"
+HAS_SOURCES_INSTRUCTIONS = (
+    "Evaluate whether {{ outputs }} cites at least one source as an http or "
+    "https URL (a clickable link). Respond true if the answer contains at "
+    "least one such URL, false otherwise."
+)
+
+_has_sources_registered = False
+
+
+def get_has_sources_scorer():
+    """Return the ``has_sources`` judge as a registered experiment scorer.
+
+    Get-or-register, mirroring get_conciseness_scorer(): we register the judge
+    so the scorer lives in the experiment itself — reusable across loops and
+    available for production monitoring — rather than being re-instantiated ad
+    hoc in each script. get_scorer() looks it up first; only a genuine miss
+    (RESOURCE_DOES_NOT_EXIST, same pattern as get_dataset) triggers registration.
+
+    Requires a SQL-backed tracking server. Registration does NOT call the model,
+    so this works without an OpenAI key.
+    """
+    # Imported locally (like get_conciseness_scorer) so `import setup` stays
+    # light and doesn't pull in the judge stack just to use the dataset helpers.
+    from mlflow.genai.judges import make_judge
+    from mlflow.genai.scorers import get_scorer
+    from mlflow.exceptions import MlflowException
+    from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST, ErrorCode
+
+    try:
+        return get_scorer(
+            name=HAS_SOURCES_SCORER_NAME, experiment_id=experiment.experiment_id
+        )
+    except MlflowException as e:
+        if e.error_code != ErrorCode.Name(RESOURCE_DOES_NOT_EXIST):
+            raise
+        judge = make_judge(
+            name=HAS_SOURCES_SCORER_NAME,
+            instructions=HAS_SOURCES_INSTRUCTIONS,
+            model=JUDGE_MODEL,
+            feedback_value_type=bool,
+        )
+        # Guard against registering a new version if a concurrent miss + register
+        # races within this process (register() versions on each call).
+        global _has_sources_registered
+        if _has_sources_registered:
+            return get_scorer(
+                name=HAS_SOURCES_SCORER_NAME, experiment_id=experiment.experiment_id
+            )
+        _has_sources_registered = True
+        return judge.register(
+            name=HAS_SOURCES_SCORER_NAME, experiment_id=experiment.experiment_id
         )
 
 
