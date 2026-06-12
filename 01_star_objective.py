@@ -26,12 +26,16 @@ from setup import (
     JUDGE_MODEL,
     PROMPT_NAME,
     create_agent,
+    get_conciseness_scorer,
     get_train_data,
     has_sources,
     predict_fn,
     prompt_v1,
     run_scenarios,
 )
+
+# Registered experiment scorer; reused for both v1 and v2 evaluation below.
+conciseness = get_conciseness_scorer()
 
 parser = argparse.ArgumentParser(description="STAR Loop 1 — Objective Judge")
 parser.add_argument(
@@ -54,10 +58,11 @@ traces_v1 = run_scenarios(agent_v1, run_name="agent-v1")
 # ── A: Evaluate v1 ───────────────────────────────────────────────────────
 
 print("\nEvaluating agent v1 …")
-eval_v1 = mlflow.genai.evaluate(data=traces_v1, scorers=[has_sources])
+eval_v1 = mlflow.genai.evaluate(data=traces_v1, scorers=[has_sources, conciseness])
 
 v1_cite = eval_v1.metrics["has_sources/mean"]
-print(f"  v1  has_sources = {v1_cite:.0%}")
+v1_concise = eval_v1.metrics["conciseness/mean"]
+print(f"  v1  has_sources = {v1_cite:.0%}  conciseness = {v1_concise:.0%}")
 
 # ── R: Automated prompt optimization → v2 ────────────────────────────────
 
@@ -77,6 +82,8 @@ if args.refine == "metaprompt":
             reflection_model=JUDGE_MODEL,
             guidelines="Responses MUST cite sources with Wikipedia URLs.",
         ),
+        # Loop 1 optimizes the objective metric only; conciseness is reported
+        # above/below as the pre-alignment read, not an optimization target.
         scorers=[has_sources],
     )
 
@@ -119,10 +126,11 @@ traces_v2 = run_scenarios(agent_v2, run_name="agent-v2")
 # ── A: Evaluate v2 ───────────────────────────────────────────────────────
 
 print("\nEvaluating agent v2 …")
-eval_v2 = mlflow.genai.evaluate(data=traces_v2, scorers=[has_sources])
+eval_v2 = mlflow.genai.evaluate(data=traces_v2, scorers=[has_sources, conciseness])
 
 v2_cite = eval_v2.metrics["has_sources/mean"]
-print(f"  v2  has_sources = {v2_cite:.0%}")
+v2_concise = eval_v2.metrics["conciseness/mean"]
+print(f"  v2  has_sources = {v2_cite:.0%}  conciseness = {v2_concise:.0%}")
 
 # ── Side-by-side comparison ──────────────────────────────────────────────
 
@@ -134,6 +142,10 @@ print(f"  {'-'*20} {'-'*8} {'-'*8} {'-'*8}")
 print(
     f"  {'has_sources':<20} {v1_cite:>7.0%} {v2_cite:>7.0%}"
     f" {v2_cite - v1_cite:>+7.0%}"
+)
+print(
+    f"  {'conciseness':<20} {v1_concise:>7.0%} {v2_concise:>7.0%}"
+    f" {v2_concise - v1_concise:>+7.0%}"
 )
 print("\nDone. Inspect runs in the MLflow UI under the 'costar-research-agent' experiment.")
 print("Browse the 'Prompts' tab to see the 'research-agent' prompt with v1 and v2 diffs.")

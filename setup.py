@@ -288,6 +288,67 @@ def has_sources(outputs) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Scorer: conciseness LLM judge, registered as a first-class experiment scorer
+# ---------------------------------------------------------------------------
+# Instructions match 02_star_judge_align.py verbatim so the registered scorer
+# behaves identically to the inline judge used during alignment.
+CONCISENESS_SCORER_NAME = "conciseness"
+CONCISENESS_INSTRUCTIONS = (
+    "Evaluate if {{ outputs }} provides a concise, direct answer to "
+    "{{ inputs }}. A concise answer gets to the point quickly without "
+    "unnecessary elaboration, filler phrases, or repeated information.\n\n"
+    "Respond true if the answer is concise, false if it is verbose."
+)
+
+_conciseness_registered = False
+
+
+def get_conciseness_scorer():
+    """Return the ``conciseness`` judge as a registered experiment scorer.
+
+    Get-or-register: we register the judge so the scorer lives in the
+    experiment itself — reusable across loops and available for production
+    monitoring — rather than being re-instantiated ad hoc in each script.
+    get_scorer() looks it up first; only a genuine miss (RESOURCE_DOES_NOT_EXIST,
+    same pattern as get_dataset) triggers registration.
+
+    Requires a SQL-backed tracking server. Registration does NOT call the model,
+    so this works without an OpenAI key.
+    """
+    # Imported locally (like get_scenario_dataset) so `import setup` stays light
+    # and doesn't pull in the judge stack just to use the dataset helpers.
+    from mlflow.genai.judges import make_judge
+    from mlflow.genai.scorers import get_scorer
+    from mlflow.exceptions import MlflowException
+    from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST, ErrorCode
+
+    try:
+        return get_scorer(
+            name=CONCISENESS_SCORER_NAME, experiment_id=experiment.experiment_id
+        )
+    except MlflowException as e:
+        if e.error_code != ErrorCode.Name(RESOURCE_DOES_NOT_EXIST):
+            raise
+        judge = make_judge(
+            name=CONCISENESS_SCORER_NAME,
+            instructions=CONCISENESS_INSTRUCTIONS,
+            model=JUDGE_MODEL,
+            feedback_value_type=bool,
+        )
+        # Guard against registering a new version if a concurrent miss + register
+        # races within this process (register() versions on each call).
+        global _conciseness_registered
+        if _conciseness_registered:
+            return get_scorer(
+                name=CONCISENESS_SCORER_NAME, experiment_id=experiment.experiment_id
+            )
+        _conciseness_registered = True
+        return judge.register(
+            name=CONCISENESS_SCORER_NAME, experiment_id=experiment.experiment_id
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helper: run agent on every scenario and collect traces
 # ---------------------------------------------------------------------------
 def run_scenarios(agent, scenarios=None, *, run_name: str):
