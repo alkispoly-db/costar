@@ -111,21 +111,15 @@ You are a research assistant. Answer the user's question using the
 search tool. Provide a thorough, accurate answer based on search results."""
 
 
-_autolog_enabled = False
-
-
 def create_agent(system_prompt: str):
     """Create a Deep Agent with the given system prompt and search tool."""
     # Imported and enabled here (not at module load) so the dataset helpers
     # stay usable without the langchain/deepagents stack.
     from deepagents import create_deep_agent
 
-    # create_agent runs per agent and per predict_fn call; enable autolog only
-    # once to avoid re-patching langchain on every invocation.
-    global _autolog_enabled
-    if not _autolog_enabled:
-        mlflow.langchain.autolog()
-        _autolog_enabled = True
+    # No once-guard: mlflow.genai.evaluate disables autolog on exit, so we must
+    # re-enable it every time. autolog() is idempotent, so re-patching is harmless.
+    mlflow.langchain.autolog()
     return create_deep_agent(
         model=AGENT_MODEL, tools=[search_wikipedia], system_prompt=system_prompt
     )
@@ -470,6 +464,9 @@ def run_scenarios(agent, scenarios=None, *, run_name, scorers=None):
         scenarios = load_scenarios()
 
     with mlflow.start_run(run_name=run_name):
+        # A prior mlflow.genai.evaluate disables autolog on exit; re-enable it
+        # here so the agent invocations below are actually traced.
+        mlflow.langchain.autolog()
         trace_ids = []
         for scenario in scenarios:
             agent.invoke(
