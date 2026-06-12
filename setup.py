@@ -48,6 +48,11 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
     """
     import wikipedia
 
+    # The `wikipedia` library defaults to http://, which Wikipedia 301-redirects
+    # to an empty body (-> JSONDecodeError). Pin to https and set a real UA.
+    wikipedia.wikipedia.API_URL = "https://en.wikipedia.org/w/api.php"
+    wikipedia.wikipedia.USER_AGENT = "costar-demo/1.0 (https://github.com/alkispoly-db/costar)"
+
     titles = wikipedia.search(query, results=max_results)
     results = []
     for title in titles:
