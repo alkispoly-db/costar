@@ -449,22 +449,27 @@ def get_has_sources_scorer():
 # ---------------------------------------------------------------------------
 # Helper: run agent on every scenario and collect traces
 # ---------------------------------------------------------------------------
-def run_scenarios(agent, scenarios=None, *, run_name: str = None):
-    """Invoke *agent* on each scenario and return the resulting traces.
+def run_scenarios(agent, scenarios=None, *, run_name, scorers=None):
+    """Invoke *agent* on each scenario under its own run and return the traces.
 
     When *scenarios* is omitted, questions are sourced from the eval dataset
     (the runtime source of truth); existing callers may still pass an explicit
     scenario list.
 
-    When *run_name* is None, traces are logged into the currently-active MLflow
-    run (the caller opens its own run); otherwise a new run named *run_name* is
-    opened, as before.
+    A new run named *run_name* is always opened; the agent traces associate with
+    it. Logging into a caller's active run instead silently fails to associate
+    the agent traces (only the caller's own validation traces land on it), so
+    *run_name* is required and run_scenarios owns the run.
+
+    When *scorers* is provided, ``mlflow.genai.evaluate`` runs on the collected
+    traces inside the same run, so the score metric lands on this run; each
+    scorer's ``"{name}/mean"`` value is printed. The return contract is
+    unchanged: the list of traces.
     """
     if scenarios is None:
         scenarios = load_scenarios()
-    label = run_name or "run_scenarios"
 
-    def _invoke_all():
+    with mlflow.start_run(run_name=run_name):
         trace_ids = []
         for scenario in scenarios:
             agent.invoke(
@@ -472,18 +477,18 @@ def run_scenarios(agent, scenarios=None, *, run_name: str = None):
             )
             trace_id = mlflow.get_last_active_trace_id()
             trace_ids.append(trace_id)
-            print(f"  [{label}] {scenario['question'][:60]}…  trace={trace_id}")
-        return trace_ids
+            print(f"  [{run_name}] {scenario['question'][:60]}…  trace={trace_id}")
 
-    if run_name is None:
-        # No run_name: log under whatever run the caller already opened.
-        trace_ids = _invoke_all()
-    else:
-        with mlflow.start_run(run_name=run_name):
-            trace_ids = _invoke_all()
+        mlflow.flush_trace_async_logging()
+        traces = [mlflow.get_trace(tid) for tid in trace_ids]
 
-    mlflow.flush_trace_async_logging()
-    return [mlflow.get_trace(tid) for tid in trace_ids]
+        if scorers is not None:
+            result = mlflow.genai.evaluate(data=traces, scorers=scorers)
+            for scorer_obj in scorers:
+                key = f"{scorer_obj.name}/mean"
+                print(f"  [{run_name}] {key} = {result.metrics[key]:.0%}")
+
+    return traces
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,6 @@ After running, browse the Prompts registry to see the new prompt version, and
 the Evaluation runs view for the "01-refine" eval run.
 """
 
-import mlflow
 from mlflow.genai.optimize import optimize_prompts
 from mlflow.genai.optimize.optimizers import MetaPromptOptimizer
 
@@ -48,18 +47,16 @@ opt = optimize_prompts(
 new_prompt = opt.optimized_prompts[0]
 
 # ── Final eval of the optimized prompt under the "01-refine" run ──────────
-# Generate fresh traces with the new prompt, then evaluate them — both the
-# traces and the eval metric live on a single "01-refine" run. run_scenarios
-# is called with run_name=None so it logs into the active run we open here.
+# Generate fresh traces with the new prompt and score them in one shot:
+# run_scenarios opens the "01-refine" run, associates all 15 agent traces with
+# it, and (via scorers=) runs evaluate inside that same run so the
+# has_sources/mean metric lands on it too. It also prints the final mean.
 agent = create_agent(new_prompt.template)
-with mlflow.start_run(run_name="01-refine"):
-    traces = run_scenarios(agent)
-    result = mlflow.genai.evaluate(data=traces, scorers=[has_sources])
+traces = run_scenarios(agent, run_name="01-refine", scorers=[has_sources])
 
 # ── Report ────────────────────────────────────────────────────────────────
 print(f"\nOptimized prompt registered as v{new_prompt.version}.")
 print(f"  baseline  has_sources = {opt.initial_eval_score}")
 print(f"  optimized has_sources = {opt.final_eval_score}")
-print(f"  final eval (01-refine) has_sources/mean = {result.metrics['has_sources/mean']:.0%}")
 print("\nBrowse the Prompts registry for the new prompt version,")
 print("and the Evaluation runs view for the '01-refine' eval run.")
