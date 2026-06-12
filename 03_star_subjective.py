@@ -6,7 +6,8 @@ we can safely use it to refine the agent — the "coupled" in coSTAR.
 
 This script:
 
-  1. Loads the aligned conciseness judge saved by Loop 2.
+  1. Loads the aligned conciseness judge (latest registered version) from the
+     experiment scorer registry.
   2. Loads prompt v2 from the prompt registry.
   3. Runs agent v2 on all scenarios and evaluates with BOTH the citation
      scorer and the aligned conciseness judge via mlflow.genai.evaluate().
@@ -27,12 +28,13 @@ import argparse
 from pathlib import Path
 
 import mlflow
-from mlflow.genai.scorers import Scorer
+from mlflow.genai.scorers import get_scorer
 
 from setup import (
     JUDGE_MODEL,
     PROMPT_NAME,
     create_agent,
+    experiment,
     find_prompt_by_tag,
     get_train_data,
     has_sources,
@@ -55,12 +57,11 @@ print("=" * 70)
 print("Loading aligned conciseness judge from Loop 2 …")
 print("=" * 70)
 
-judge_file = Path("_aligned_judge.json")
-if not judge_file.exists():
-    raise RuntimeError("No aligned judge found. Run 02_star_judge_align.py first.")
-
-aligned_judge = Scorer.model_validate_json(judge_file.read_text())
-print(f"  Loaded aligned judge '{aligned_judge.name}' from {judge_file}\n")
+# Loop 2 registers the MemAligned judge as the latest 'conciseness' version,
+# so we load the latest (no hardcoded version). Run Loop 2 first; otherwise the
+# latest version is still the generic judge from Loop 1.
+aligned_judge = get_scorer(name="conciseness", experiment_id=experiment.experiment_id)
+print("  Loaded aligned conciseness judge (latest registered version) from the experiment registry.\n")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────

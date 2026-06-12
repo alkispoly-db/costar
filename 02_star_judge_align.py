@@ -11,20 +11,27 @@ This script:
   5. Simulates human feedback that disagrees with the judge on specific cases.
   6. Aligns the judge with human preferences using MemAlignOptimizer.
   7. Verifies the aligned judge now matches human opinions.
-  8. Saves the aligned judge to _aligned_judge.json for Loop 3.
+  8. Registers the aligned judge as a new version of the experiment's
+     'conciseness' scorer for Loop 3.
 
 Key insight: you can't trust the agent refinement loop until you trust the judge.
 """
-
-import json
-from pathlib import Path
 
 import mlflow
 from mlflow.entities import AssessmentSource, AssessmentSourceType
 from mlflow.genai.judges import make_judge
 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
-from setup import JUDGE_MODEL, PROMPT_NAME, create_agent, find_prompt_by_tag, load_scenarios, run_scenarios
+from setup import (
+    EXPERIMENT_NAME,
+    JUDGE_MODEL,
+    PROMPT_NAME,
+    create_agent,
+    experiment,
+    find_prompt_by_tag,
+    load_scenarios,
+    run_scenarios,
+)
 
 # Source scenarios from the eval dataset; this list is reused below so the
 # per-trace human-feedback rationales stay index-aligned with the traces.
@@ -188,8 +195,16 @@ for i, trace in enumerate(traces):
 
 print(f"\n  Agreement with humans: {matches_before}/{total} → {matches_after}/{total}")
 
-# ── Save aligned judge for Loop 3 ─────────────────────────────────────────
+# ── Register aligned judge as a new 'conciseness' scorer version ──────────
+#
+# Loop 1 already registered the generic conciseness judge as v1. Registering
+# the aligned judge here creates v2 (register() versions on each call), so the
+# experiment scorer's latest version is now the MemAligned one. Loop 3 and
+# production monitoring load the latest version — no file handoff needed.
 
-Path("_aligned_judge.json").write_text(json.dumps(aligned_judge.model_dump()))
-print("\nSaved aligned judge to _aligned_judge.json")
+aligned_judge.register(name="conciseness", experiment_id=experiment.experiment_id)
+print(
+    f"\nRegistered MemAligned judge as scorer 'conciseness' (new version) "
+    f"in experiment '{EXPERIMENT_NAME}'"
+)
 print("Done. The aligned conciseness judge is ready for Loop 3.")
