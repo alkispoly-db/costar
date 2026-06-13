@@ -2,10 +2,17 @@
 02 — ASSESS phase (coSTAR loop 2).
 
 Scores the existing traces with the registered conciseness judge and then adds
-(simulated) human assessments that disagree with the judge on about half of
-them. This is the A in STAR for loop 2: attach both the judge's verdicts and
-human labels to the loop-1 traces so the next phase can align the judge to the
-human preferences.
+a small set of (simulated) human assessments that encode a *learnable*
+distinction: explanatory "how/why/differences" questions deserve a thorough,
+multi-sentence answer and should NOT be penalized for length, whereas simple
+factual questions are expected to be short. This is the A in STAR for loop 2:
+attach both the judge's verdicts and human labels to the loop-1 traces so the
+next phase can align the generic judge to that principle.
+
+The generic conciseness judge (v1) is a one-sentence "is it concise? true/false"
+judge that tends to penalize ANY long answer. The human labels here teach the
+exception via their *rationales* — the natural-language signal MemAlign learns
+from — so the aligned judge stops penalizing length on explanatory questions.
 
 There is no TRACE phase in loop 2 — the traces already exist from loop 1
 (the '01-refine' run). We read them back and assess them in place.
@@ -17,6 +24,7 @@ Run loop 1 (01-trace / 01-assess / 01-refine) first, then 02-add-judge.py —
 this phase reads the '01-refine' traces and the registered conciseness judge.
 """
 
+import json
 import sys
 
 import mlflow
@@ -25,11 +33,58 @@ from mlflow.exceptions import MlflowException
 from mlflow.genai.scorers import get_scorer
 from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST, ErrorCode
 
-from setup import experiment, load_scenarios, traces_for_run
+from setup import experiment, traces_for_run
 
-# Source scenarios from the eval dataset; reused below so the per-trace human
-# feedback rationales stay index-aligned with the traces.
-scenarios = load_scenarios()
+# ── Category-based human-label scheme (exactly 5 labels) ──────────────────
+#
+# The labels encode a LEARNABLE rule rather than arbitrary flips. Both groups
+# are labeled concise=True (human value), but their RATIONALES contrast:
+#   * EXPLANATORY questions — a thorough multi-sentence answer is appropriate,
+#     so a long answer should NOT be penalized. Wherever the generic judge said
+#     False (because the answer was long) this label DISAGREES with the judge —
+#     that disagreement is the signal MemAlign learns from.
+#   * SIMPLE/FACTUAL questions — a short, direct answer is expected. These are
+#     agreement anchors that reinforce the contrast.
+EXPLANATORY_RATIONALE = (
+    "This is an explanatory 'how/why' question — a thorough, multi-sentence "
+    "answer is appropriate here and should NOT be penalized for length."
+)
+FACTUAL_RATIONALE = (
+    "Simple factual question — a short, direct answer is expected and is "
+    "appropriately concise."
+)
+
+# Each entry: (exact question text, category, human value, rationale).
+LABEL_SCHEME = [
+    ("How does CRISPR gene editing work?", "explanatory", True, EXPLANATORY_RATIONALE),
+    ("How do mRNA vaccines work?", "explanatory", True, EXPLANATORY_RATIONALE),
+    (
+        "How does quantum computing differ from classical computing?",
+        "explanatory",
+        True,
+        EXPLANATORY_RATIONALE,
+    ),
+    ("What is the current population of Tokyo?", "factual", True, FACTUAL_RATIONALE),
+    (
+        "Who won the most recent FIFA World Cup and where was it held?",
+        "factual",
+        True,
+        FACTUAL_RATIONALE,
+    ),
+]
+
+
+def trace_question(trace):
+    """Return the user question text from a trace's request inputs.
+
+    The agent is invoked with ``{"messages": [{"role": "user", "content": q}]}``
+    (see ``setup.run_scenarios``), serialized as the trace request JSON. We pull
+    the first user message's content so traces can be matched to target
+    questions by exact text rather than fragile positional index alignment.
+    """
+    request = json.loads(trace.data.request)
+    return request["messages"][0]["content"]
+
 
 # ── Source traces from the most-recent loop-1 agent run ───────────────────
 traces = traces_for_run("01-refine")
@@ -68,20 +123,16 @@ with mlflow.start_run(run_name="02-assess"):
     for tid, verdict in judge_verdicts.items():
         print(f"  trace {tid}: judge says '{verdict}'")
 
-    # ── A (part 2): simulate a SMALL amount of human feedback ────────────
+    # ── A (part 2): log category-based human feedback on 5 traces ────────
     #
     # The story for loop 2 is "align the judge from a *small* amount of human
-    # feedback": a domain expert labels only the first 5 of the 15 questions,
-    # not all of them. Humans have domain-specific opinions about conciseness
-    # that the generic judge doesn't capture, so on a couple of those 5 the
-    # human deliberately *disagrees* with the judge — that disagreement is the
-    # signal MemAlign learns from.
-    #
-    # Deterministic selection: the first 5 traces in load_scenarios()/traces
-    # order. Among those 5 we flip the judge's verdict on 2 fixed indices (so
-    # the human disagrees on ~2 and agrees on the other 3).
+    # feedback": a domain expert labels only 5 of the 15 questions. Rather than
+    # arbitrary flips, the labels encode a learnable distinction (see
+    # LABEL_SCHEME above) — explanatory questions may run long, simple factual
+    # ones should stay short. The human value is True for all 5; the contrasting
+    # RATIONALES carry the principle MemAlign aligns to.
     print("\n" + "=" * 70)
-    print("Logging human feedback (simulated) on a small labeled subset …")
+    print("Logging human feedback (category-based) on a small labeled subset …")
     print("=" * 70)
 
     human_source = AssessmentSource(
@@ -89,42 +140,46 @@ with mlflow.start_run(run_name="02-assess"):
         source_id="domain_expert",
     )
 
-    # Label only the first 5 questions in the deterministic scenario order.
-    LABELED_COUNT = 5
-    labeled_idxs = list(range(min(LABELED_COUNT, len(traces))))
+    # Match traces to target questions by exact question text (robust to the
+    # non-deterministic order of search_traces).
+    traces_by_question = {trace_question(t): t for t in traces}
 
-    # Within the labeled subset, disagree with the judge on these 2 indices and
-    # agree on the rest. Fixed indices keep the demo reproducible.
-    disagree_idxs = {1, 3}
-
+    n_explanatory = 0
+    n_factual = 0
     n_disagree = 0
-    for i in labeled_idxs:
-        trace = traces[i]
-        judge_val = judge_verdicts[trace.info.trace_id]
-        if i in disagree_idxs:
-            human_val = not bool(judge_val)  # human overrides the judge
-        else:
-            human_val = judge_val  # agree with the judge
+    for question, category, human_val, rationale in LABEL_SCHEME:
+        trace = traces_by_question.get(question)
+        if trace is None:
+            print(f"  SKIP (no trace matched): {question!r}")
+            continue
 
-        agrees = "agree" if human_val == judge_val else "DISAGREE"
-        if human_val != judge_val:
+        judge_val = judge_verdicts[trace.info.trace_id]
+        disagrees = bool(human_val) != bool(judge_val)
+        if disagrees:
             n_disagree += 1
+        if category == "explanatory":
+            n_explanatory += 1
+        else:
+            n_factual += 1
 
         mlflow.log_feedback(
             trace_id=trace.info.trace_id,
             name="conciseness",  # must match judge name
             value=human_val,
             source=human_source,
-            rationale=(
-                f"Human {'agrees' if human_val == judge_val else 'disagrees'} "
-                f"with judge. Question: {scenarios[i]['question'][:50]}…"
-            ),
+            rationale=rationale,
         )
-        print(f"  trace {i:>2}: judge={str(judge_val):<5}  human={str(human_val):<5}  [{agrees}]")
+        marker = "DISAGREE" if disagrees else "agree"
+        print(
+            f"  [{category:<11}] judge={str(judge_val):<5}  human={str(human_val):<5}  "
+            f"[{marker}]  {question}"
+        )
 
+    n_labeled = n_explanatory + n_factual
     print(
-        f"\n  Logged human labels on {len(labeled_idxs)}/{len(traces)} questions "
-        f"({n_disagree} disagree with the judge)."
+        f"\n  Labeled {n_labeled}/{len(traces)} "
+        f"({n_explanatory} explanatory, {n_factual} factual); "
+        f"{n_disagree} disagree with the generic judge."
     )
 
 print("\nOpen the traces in the MLflow UI to see judge verdicts + human feedback.")
