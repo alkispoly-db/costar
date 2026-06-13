@@ -68,21 +68,20 @@ with mlflow.start_run(run_name="02-assess"):
     for tid, verdict in judge_verdicts.items():
         print(f"  trace {tid}: judge says '{verdict}'")
 
-    # ── A (part 2): simulate human feedback ──────────────────────────────
+    # ── A (part 2): simulate a SMALL amount of human feedback ────────────
     #
-    # Humans have domain-specific opinions about conciseness that the generic
-    # judge doesn't capture. We simulate that by logging human assessments that
-    # *disagree* with the judge on a subset of traces.
+    # The story for loop 2 is "align the judge from a *small* amount of human
+    # feedback": a domain expert labels only the first 5 of the 15 questions,
+    # not all of them. Humans have domain-specific opinions about conciseness
+    # that the generic judge doesn't capture, so on a couple of those 5 the
+    # human deliberately *disagrees* with the judge — that disagreement is the
+    # signal MemAlign learns from.
     #
-    # To ensure ~30-40% disagreement regardless of how the judge scores, we
-    # split traces where the judge said "yes" and "no", then flip about half
-    # of each group:
-    #   - Judge said "no" → human says "yes" for half (nuanced questions deserve
-    #     a few sentences; the judge was too strict)
-    #   - Judge said "yes" → human says "no" for half (answers ramble despite
-    #     the judge calling them concise)
+    # Deterministic selection: the first 5 traces in load_scenarios()/traces
+    # order. Among those 5 we flip the judge's verdict on 2 fixed indices (so
+    # the human disagrees on ~2 and agrees on the other 3).
     print("\n" + "=" * 70)
-    print("Logging human feedback (simulated) …")
+    print("Logging human feedback (simulated) on a small labeled subset …")
     print("=" * 70)
 
     human_source = AssessmentSource(
@@ -90,24 +89,26 @@ with mlflow.start_run(run_name="02-assess"):
         source_id="domain_expert",
     )
 
-    # Split traces by judge verdict so we can flip a balanced subset
-    judge_yes_idxs = [i for i, t in enumerate(traces) if judge_verdicts[t.info.trace_id] is True]
-    judge_no_idxs = [i for i, t in enumerate(traces) if judge_verdicts[t.info.trace_id] is False]
+    # Label only the first 5 questions in the deterministic scenario order.
+    LABELED_COUNT = 5
+    labeled_idxs = list(range(min(LABELED_COUNT, len(traces))))
 
-    # Flip roughly half of each group (at least 2 from each side)
-    flip_yes_to_no = set(judge_yes_idxs[: max(2, len(judge_yes_idxs) // 2)])
-    flip_no_to_yes = set(judge_no_idxs[: max(2, len(judge_no_idxs) // 2)])
+    # Within the labeled subset, disagree with the judge on these 2 indices and
+    # agree on the rest. Fixed indices keep the demo reproducible.
+    disagree_idxs = {1, 3}
 
-    for i, trace in enumerate(traces):
+    n_disagree = 0
+    for i in labeled_idxs:
+        trace = traces[i]
         judge_val = judge_verdicts[trace.info.trace_id]
-        if i in flip_yes_to_no:
-            human_val = False  # human thinks the answer rambles
-        elif i in flip_no_to_yes:
-            human_val = True  # human thinks a longer answer is fine here
+        if i in disagree_idxs:
+            human_val = not bool(judge_val)  # human overrides the judge
         else:
             human_val = judge_val  # agree with the judge
 
         agrees = "agree" if human_val == judge_val else "DISAGREE"
+        if human_val != judge_val:
+            n_disagree += 1
 
         mlflow.log_feedback(
             trace_id=trace.info.trace_id,
@@ -121,7 +122,9 @@ with mlflow.start_run(run_name="02-assess"):
         )
         print(f"  trace {i:>2}: judge={str(judge_val):<5}  human={str(human_val):<5}  [{agrees}]")
 
-    n_disagree = len(flip_yes_to_no) + len(flip_no_to_yes)
-    print(f"\n  Disagreements: {n_disagree}/{len(traces)} ({n_disagree/len(traces):.0%})")
+    print(
+        f"\n  Logged human labels on {len(labeled_idxs)}/{len(traces)} questions "
+        f"({n_disagree} disagree with the judge)."
+    )
 
 print("\nOpen the traces in the MLflow UI to see judge verdicts + human feedback.")

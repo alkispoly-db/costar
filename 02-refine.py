@@ -60,13 +60,21 @@ if all(v is None for v in human_verdicts.values()):
     print("Traces carry no human 'conciseness' feedback. Run `python 02-assess.py` first.")
     sys.exit(1)
 
+# 02-assess only labels a small subset (5 of 15) of the traces. Both the
+# alignment and the before/after verification must operate over just those
+# labeled traces — the other 10 carry no human signal to align against.
+labeled_traces = [t for t in traces if human_verdicts[t.info.trace_id] is not None]
+print(f"Found human labels on {len(labeled_traces)}/{len(traces)} traces.")
+
 # ── R: align the judge with human feedback via MemAlign ───────────────────
 print("=" * 70)
 print("Aligning judge with human feedback via MemAlign …")
 print("=" * 70)
 
+# Pass only the labeled traces: MemAlign learns from the human feedback, and
+# unlabeled traces would contribute no signal (and could trip up the optimizer).
 optimizer = MemAlignOptimizer(reflection_lm=JUDGE_MODEL)
-aligned_judge = conciseness_judge.align(traces=traces, optimizer=optimizer)
+aligned_judge = conciseness_judge.align(traces=labeled_traces, optimizer=optimizer)
 
 print("\n  Original instructions:")
 print(f"    {conciseness_judge.instructions[:200]}…")
@@ -80,9 +88,9 @@ print("=" * 70)
 
 matches_before = 0
 matches_after = 0
-total = len(traces)
+total = len(labeled_traces)
 
-for i, trace in enumerate(traces):
+for i, trace in enumerate(labeled_traces):
     human_val = human_verdicts[trace.info.trace_id]
     judge_val = judge_verdicts[trace.info.trace_id]
     aligned_val = aligned_judge(trace=trace).value

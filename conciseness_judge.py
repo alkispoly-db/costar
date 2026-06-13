@@ -15,9 +15,7 @@ from mlflow.genai.judges import make_judge
 # verbatim so the registered scorer behaves identically.
 CONCISENESS_INSTRUCTIONS = (
     "Evaluate if {{ outputs }} provides a concise, direct answer to "
-    "{{ inputs }}. A concise answer gets to the point quickly without "
-    "unnecessary elaboration, filler phrases, or repeated information.\n\n"
-    "Respond true if the answer is concise, false if it is verbose."
+    "{{ inputs }}. Respond true if the answer is concise, false if it is verbose."
 )
 
 
