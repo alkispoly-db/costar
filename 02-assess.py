@@ -4,8 +4,9 @@
 Scores the existing traces with the registered conciseness judge and then adds
 a small set of (simulated) human assessments that encode a *learnable*
 distinction: explanatory "how/why/differences" questions deserve a thorough,
-multi-sentence answer and should NOT be penalized for length, whereas simple
-factual questions are expected to be short. This is the A in STAR for loop 2:
+multi-paragraph answer and should NOT be penalized for length (value=True),
+whereas simple factual questions are expected to be short, so a long answer is
+unnecessarily verbose (value=False). This is the A in STAR for loop 2:
 attach both the judge's verdicts and human labels to the loop-1 traces so the
 next phase can align the generic judge to that principle.
 
@@ -37,21 +38,23 @@ from setup import experiment, traces_for_run
 
 # ── Category-based human-label scheme (exactly 5 labels) ──────────────────
 #
-# The labels encode a LEARNABLE rule rather than arbitrary flips. Both groups
-# are labeled concise=True (human value), but their RATIONALES contrast:
-#   * EXPLANATORY questions — a thorough multi-sentence answer is appropriate,
-#     so a long answer should NOT be penalized. Wherever the generic judge said
-#     False (because the answer was long) this label DISAGREES with the judge —
-#     that disagreement is the signal MemAlign learns from.
-#   * SIMPLE/FACTUAL questions — a short, direct answer is expected. These are
-#     agreement anchors that reinforce the contrast.
+# The baseline prompt is deliberately verbose, so the agent produces long
+# answers and the generic conciseness judge tends to say "not concise" for
+# every question. The labels encode a LEARNABLE rule that the judge is missing:
+#   * EXPLANATORY questions — a thorough, multi-paragraph answer is appropriate,
+#     so a long answer should NOT be penalized: human value=True. Where the
+#     generic judge said False, this label DISAGREES — the signal MemAlign learns.
+#   * FACTUAL questions — a long, elaborate answer IS unnecessarily verbose:
+#     human value=False. This matches what the judge already says for verbose
+#     answers, but the rationale teaches *why* (a short answer was expected),
+#     anchoring the contrast against the explanatory group.
 EXPLANATORY_RATIONALE = (
-    "This is an explanatory 'how/why' question — a thorough, multi-sentence "
+    "This is an explanatory 'how/why' question — a thorough, multi-paragraph "
     "answer is appropriate here and should NOT be penalized for length."
 )
 FACTUAL_RATIONALE = (
-    "Simple factual question — a short, direct answer is expected and is "
-    "appropriately concise."
+    "This is a simple factual question — a long, elaborate answer is "
+    "unnecessarily verbose; a short, direct answer is expected."
 )
 
 # Each entry: (exact question text, category, human value, rationale).
@@ -64,11 +67,11 @@ LABEL_SCHEME = [
         True,
         EXPLANATORY_RATIONALE,
     ),
-    ("What is the current population of Tokyo?", "factual", True, FACTUAL_RATIONALE),
+    ("What is the current population of Tokyo?", "factual", False, FACTUAL_RATIONALE),
     (
         "Who won the most recent FIFA World Cup and where was it held?",
         "factual",
-        True,
+        False,
         FACTUAL_RATIONALE,
     ),
 ]
@@ -126,11 +129,11 @@ with mlflow.start_run(run_name="02-assess"):
     # ── A (part 2): log category-based human feedback on 5 traces ────────
     #
     # The story for loop 2 is "align the judge from a *small* amount of human
-    # feedback": a domain expert labels only 5 of the 15 questions. Rather than
+    # feedback": a domain expert labels only 5 of the 10 questions. Rather than
     # arbitrary flips, the labels encode a learnable distinction (see
-    # LABEL_SCHEME above) — explanatory questions may run long, simple factual
-    # ones should stay short. The human value is True for all 5; the contrasting
-    # RATIONALES carry the principle MemAlign aligns to.
+    # LABEL_SCHEME above) — explanatory questions may run long (value=True),
+    # simple factual ones should stay short (value=False). Both the values and
+    # the contrasting RATIONALES carry the principle MemAlign aligns to.
     print("\n" + "=" * 70)
     print("Logging human feedback (category-based) on a small labeled subset …")
     print("=" * 70)

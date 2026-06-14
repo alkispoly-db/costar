@@ -123,8 +123,11 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
 # Agent factory
 # ---------------------------------------------------------------------------
 SYSTEM_PROMPT_V1 = """\
-You are a research assistant. Answer the user's question using the
-search tool. Provide a thorough, accurate answer based on search results."""
+You are a research assistant. Use the search tool to research the user's
+question, then write a comprehensive, in-depth response. Explain the
+background and context, elaborate on every relevant detail, discuss nuances
+and related considerations, and organize your answer into several full
+paragraphs. Be exhaustive rather than brief."""
 
 
 def create_agent(system_prompt: str):
@@ -186,20 +189,12 @@ SCENARIOS = [
         "expected_facts": ["Python"],
     },
     {
-        "question": "What are the health benefits of intermittent fasting?",
-        "expected_facts": ["weight", "insulin", "metabolism"],
-    },
-    {
         "question": "How does CRISPR gene editing work?",
         "expected_facts": ["DNA", "Cas9", "guide RNA"],
     },
     {
         "question": "What caused the 2008 financial crisis?",
         "expected_facts": ["subprime", "mortgage", "Lehman"],
-    },
-    {
-        "question": "What is the James Webb Space Telescope's primary mission?",
-        "expected_facts": ["infrared", "galaxies", "universe"],
     },
     {
         "question": "How do mRNA vaccines work?",
@@ -210,20 +205,8 @@ SCENARIOS = [
         "expected_facts": ["connection", "reliable", "speed"],
     },
     {
-        "question": "What is the significance of the Rosetta Stone?",
-        "expected_facts": ["Egyptian", "hieroglyphs", "translation"],
-    },
-    {
         "question": "How does quantum computing differ from classical computing?",
         "expected_facts": ["qubit", "superposition", "entanglement"],
-    },
-    {
-        "question": "What are the environmental impacts of fast fashion?",
-        "expected_facts": ["waste", "water", "pollution"],
-    },
-    {
-        "question": "What is the current state of fusion energy research?",
-        "expected_facts": ["plasma", "tokamak", "energy"],
     },
     {
         "question": "How did the internet originate?",

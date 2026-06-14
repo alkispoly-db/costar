@@ -4,12 +4,17 @@
 This is the precondition for the per-phase demo. After running, the experiment
 contains exactly:
 
-  * the ``research-scenarios`` eval dataset (15 records),
+  * the ``research-scenarios`` eval dataset (10 records),
   * the ``has_sources`` judge registered as an experiment scorer,
-  * the ``research-agent`` prompt at v1,
+  * the ``research-agent`` prompt whose LATEST version is the current (verbose)
+    ``setup.SYSTEM_PROMPT_V1`` — the deliberately verbose baseline,
 
 and nothing else: no ``conciseness`` scorer (that belongs to loop 2), no
 traces, no eval/agent runs.
+
+The prompt reset DELETES the entire ``research-agent`` prompt (all versions)
+and RE-REGISTERS it from the current ``setup.SYSTEM_PROMPT_V1`` so the baseline
+always reflects the in-code prompt, even if an older v1 was registered before.
 
 The reset is programmatic — it talks to the live MLflow server on :5000 via the
 SDK; it does NOT touch the sqlite file or restart the server. It is idempotent:
@@ -89,11 +94,13 @@ def _reset():
         _client.delete_run(run.info.run_id)
     print(f"  deleted {len(runs)} runs")
 
-    # --- prompt versions -------------------------------------------------
-    # Reduce the registry to a single v1. delete_prompt_version exists, so we
-    # drop every version > 1 (and any stray non-1 ids); v1 itself is left in
-    # place and re-created by the seed step if it was somehow removed.
-    _prune_prompt_to_v1()
+    # --- prompt ----------------------------------------------------------
+    # Delete the ENTIRE research-agent prompt (all versions). The baseline must
+    # reflect the current (verbose) setup.SYSTEM_PROMPT_V1, but the old reset
+    # only kept v1 in place — so a stale v1 template would survive. Deleting the
+    # whole prompt here lets _seed re-register from the in-code template; on the
+    # OSS sqlite store this also resets version numbering back to 1.
+    _delete_prompt()
 
 
 def _now_ms():
@@ -102,47 +109,64 @@ def _now_ms():
     return int(time.time() * 1000)
 
 
-def _prune_prompt_to_v1():
-    """Delete all research-agent prompt versions except v1, if the API allows."""
+def _delete_prompt():
+    """Delete the whole research-agent prompt (all versions) so it can be re-seeded.
+
+    Prefers the whole-prompt delete (``MlflowClient.delete_prompt``), which on
+    the OSS registry drops the underlying registered model and cascades to every
+    version, resetting numbering to 1 on the next register. Some registries
+    require versions to be deleted first, so on failure we fall back to deleting
+    each version individually and then retrying the whole-prompt delete.
+    """
     try:
         versions = list(_client.search_prompt_versions(PROMPT_NAME))
     except MlflowException as e:
         print(f"  prompt '{PROMPT_NAME}' not present ({type(e).__name__})")
         return
-    pruned = 0
+
+    try:
+        _client.delete_prompt(PROMPT_NAME)
+        print(f"  deleted prompt '{PROMPT_NAME}' ({len(versions)} versions)")
+        return
+    except MlflowException as e:
+        print(f"  whole-prompt delete failed ({type(e).__name__}); deleting per-version")
+
+    deleted = 0
     leftover = []
     for pv in versions:
-        if str(pv.version) == "1":
-            continue
         try:
             _client.delete_prompt_version(PROMPT_NAME, str(pv.version))
-            pruned += 1
+            deleted += 1
         except MlflowException as e:
             leftover.append((pv.version, type(e).__name__))
-    print(f"  pruned {pruned} extra prompt versions (kept v1)")
+    # With all versions gone, retry the whole-prompt delete so numbering can reset.
+    try:
+        _client.delete_prompt(PROMPT_NAME)
+    except MlflowException:
+        pass
+    print(f"  deleted {deleted} prompt versions")
     if leftover:
         print(f"  NOTE: could not delete prompt versions {leftover}; left in place")
 
 
 def _seed():
-    """Recreate the clean-state artifacts: dataset + has_sources judge + prompt v1."""
+    """Recreate the clean-state artifacts: dataset + has_sources judge + baseline prompt."""
     ds = get_scenario_dataset()
     print(f"  seeded dataset '{SCENARIO_DATASET_NAME}' ({len(ds.to_df())} records)")
 
     get_has_sources_scorer()
     print("  registered 'has_sources' judge")
 
-    # Importing setup already registered prompt v1 if it was missing. If the
-    # reset removed it, re-register here so v1 is guaranteed present.
-    try:
-        mlflow.genai.load_prompt(PROMPT_NAME, version=1)
-    except MlflowException:
-        mlflow.genai.register_prompt(
-            name=PROMPT_NAME,
-            template=setup.SYSTEM_PROMPT_V1,
-            commit_message="v1: basic research assistant",
-        )
-        print("  re-registered prompt v1")
+    # _reset deleted the whole prompt, so re-register the baseline directly from
+    # the current (verbose) setup.SYSTEM_PROMPT_V1. This guarantees the LATEST
+    # prompt template — what 01-trace loads via latest_prompt() — is the verbose
+    # baseline, regardless of any prompt that existed before this reset.
+    pv = mlflow.genai.register_prompt(
+        name=PROMPT_NAME,
+        template=setup.SYSTEM_PROMPT_V1,
+        commit_message="baseline: verbose research assistant",
+    )
+    print(f"  registered baseline prompt '{PROMPT_NAME}' v{pv.version}")
 
 
 def _summary():
@@ -158,6 +182,12 @@ def _summary():
 
     pvs = list(_client.search_prompt_versions(PROMPT_NAME))
     print(f"  prompt '{PROMPT_NAME}' versions: {sorted(str(pv.version) for pv in pvs)}")
+
+    # Confirm the LATEST prompt (what 01-trace loads) is the verbose baseline.
+    latest = mlflow.genai.load_prompt(PROMPT_NAME)
+    is_verbose = latest.template == setup.SYSTEM_PROMPT_V1
+    print(f"  baseline prompt version (latest): v{latest.version}")
+    print(f"  baseline template == verbose SYSTEM_PROMPT_V1: {is_verbose}")
 
     traces = mlflow.search_traces(locations=[EID], return_type="list")
     print(f"  traces: {len(traces)}")
