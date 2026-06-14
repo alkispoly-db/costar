@@ -5,11 +5,11 @@ The 3rd STAR loop: REFINE the agent prompt for conciseness using the ALIGNED
 conciseness judge (Loop 2's output, now the registry's latest 'conciseness'
 version) while guarding citations from regressing.
 
-This is optimize_prompts() — NOT Claude Code. It mirrors the proven monolith
-(03_star_subjective.py): optimize on the objective has_sources scorer, convey
-the conciseness objective via guidelines=, and verify conciseness with the
-aligned judge afterwards. It registers research-agent v3 and logs the final
-evaluation (both metrics) under one run named '03-loop'.
+This is optimize_prompts() — NOT Claude Code. It optimizes against BOTH judges:
+has_sources guards citations while the aligned conciseness judge actively drives
+conciseness up, with guidelines= reinforcing the same smart-conciseness rule. It
+registers research-agent v3 and logs the final evaluation (both metrics) under
+one run named '03-loop'.
 
 Run loops 1 and 2 first so the registry latest is the right version: loop 1
 gives the citations-optimized prompt, and loop 2 aligns the conciseness judge so
@@ -42,9 +42,9 @@ conciseness = get_scorer(name="conciseness", experiment_id=experiment.experiment
 prompt = latest_prompt()
 
 # ── R: optimize the prompt for conciseness → new version ──────────────────
-# Mirror the monolith: optimize on the objective has_sources scorer (the aligned
-# judge misbehaves inside the optimizer's eval loop), convey the conciseness
-# objective via guidelines=, then verify conciseness with the aligned judge after.
+# Optimize against BOTH judges: has_sources guards citations and the aligned
+# conciseness judge actively drives conciseness up (not just via a guideline).
+# Guidelines reinforce the smart-conciseness rule the aligned judge encodes.
 print("=" * 70)
 print("Optimizing prompt for conciseness with MetaPromptOptimizer …")
 print("=" * 70)
@@ -56,11 +56,12 @@ opt = optimize_prompts(
     optimizer=MetaPromptOptimizer(
         reflection_model=JUDGE_MODEL,
         guidelines=(
-            "Responses must cite sources with URLs AND be concise "
-            "(one short paragraph, no filler)."
+            "Cite sources with URLs. Be concise and direct for simple factual "
+            "questions; a thorough, multi-paragraph answer is appropriate for "
+            "explanatory 'how/why' questions."
         ),
     ),
-    scorers=[has_sources],
+    scorers=[has_sources, conciseness],
 )
 
 new_prompt = opt.optimized_prompts[0]
@@ -74,8 +75,17 @@ traces = run_scenarios(agent, run_name="03-loop", scorers=[has_sources, concisen
 
 # ── Report ────────────────────────────────────────────────────────────────
 print(f"\nOptimized prompt registered as v{new_prompt.version}.")
-print(f"  baseline  has_sources = {opt.initial_eval_score}")
-print(f"  optimized has_sources = {opt.final_eval_score}")
+# With two optimizer scorers, initial/final_eval_score are the AGGREGATE.
+print(f"  baseline  aggregate = {opt.initial_eval_score}")
+print(f"  optimized aggregate = {opt.final_eval_score}")
+
+# If the optimizer exposes per-scorer breakdowns, surface them too. These
+# attributes may be absent (e.g. scalar scores), so guard and never break.
+for label, score in (("baseline", opt.initial_eval_score), ("optimized", opt.final_eval_score)):
+    for scorer_name in ("has_sources", "conciseness"):
+        per_scorer = getattr(score, scorer_name, None)
+        if per_scorer is not None:
+            print(f"  {label} {scorer_name} = {per_scorer}")
 
 print("\n" + "=" * 70)
 print("Key takeaway:")
