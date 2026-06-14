@@ -10,6 +10,13 @@ import functools
 import os
 import re
 
+# Load ~/.env so `uv run <script>` picks up OPENAI_API_KEY without manual
+# sourcing; load_dotenv does not override already-exported vars, so an
+# explicitly set key still wins.
+from dotenv import load_dotenv
+
+load_dotenv(os.path.expanduser("~/.env"))
+
 import mlflow
 from mlflow.genai.scorers import scorer
 

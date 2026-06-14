@@ -2,4 +2,7 @@
 __pycache__/
 *.pyc
 mlflow.db
+mlartifacts/
+mlruns/
+*.log
 _refine_result.json
