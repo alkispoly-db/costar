@@ -20,9 +20,88 @@ The reset is programmatic — it talks to the live MLflow server on :5000 via th
 SDK; it does NOT touch the sqlite file or restart the server. It is idempotent:
 running it twice lands on the same clean state with no errors and no growth.
 
+This script is a SINGLE command: it first ensures the MLflow server is running
+on :5000 (starting a detached server backed by the worktree's ``mlflow.db`` if
+it is down) and then performs the reset+seed. The server is launched detached so
+it survives this script exiting — the later phase scripts (01-trace … 03-loop)
+reuse it. The server-ensure step is idempotent: if a server is already up it is
+left alone (never a second one).
+
 No OpenAI key is required — registering a judge and seeding a dataset do not
-call the model.
+call the model, and ensure_server() makes no agent calls.
 """
+
+# NOTE: only stdlib at module top — the server must be up before we import
+# mlflow/setup (importing setup connects to the tracking server and registers
+# the prompt). ensure_server() runs first, then the mlflow imports happen.
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+
+HEALTH_URL = "http://localhost:5000/health"
+
+
+def ensure_server():
+    """Ensure an MLflow server is running on :5000, starting a detached one if down.
+
+    Idempotent: if a server already answers the health check we return without
+    launching a second one. A freshly started server is detached
+    (start_new_session) so it survives this script exiting — the later phase
+    scripts reuse it.
+    """
+    if _server_healthy(timeout=1.0):
+        print("MLflow server already running on :5000")
+        return
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    mlflow_bin = os.path.join(os.path.dirname(sys.executable), "mlflow")  # .venv/bin/mlflow
+    db = os.path.join(here, "mlflow.db")
+    art = os.path.join(here, "mlartifacts")
+    logf = open("/tmp/mlflow-server.log", "a")
+    subprocess.Popen(
+        [
+            mlflow_bin,
+            "server",
+            "--backend-store-uri",
+            f"sqlite:///{db}",
+            "--default-artifact-root",
+            f"file://{art}",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "5000",
+        ],
+        stdout=logf,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,  # detach: server keeps running after 00-setup exits
+    )
+
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if _server_healthy(timeout=1.0):
+            print("MLflow server started on :5000")
+            return
+        time.sleep(1)
+
+    raise RuntimeError(
+        "MLflow server did not become healthy on :5000 within 60s; "
+        "see /tmp/mlflow-server.log for details"
+    )
+
+
+def _server_healthy(timeout=1.0):
+    """Return True if GET :5000/health returns a 2xx, False otherwise."""
+    try:
+        with urllib.request.urlopen(HEALTH_URL, timeout=timeout) as resp:
+            return 200 <= resp.status < 300
+    except Exception:
+        return False
+
+
+# Bring the tracking server up BEFORE importing mlflow/setup below.
+ensure_server()
 
 import mlflow
 from mlflow import MlflowClient
