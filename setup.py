@@ -48,6 +48,7 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
     to cite a source, construct the Wikipedia URL from the page title
     (e.g. https://en.wikipedia.org/wiki/Page_Title).
     """
+    import socket
     import time
 
     import requests
@@ -62,45 +63,60 @@ def search_wikipedia(query: str, max_results: int = 3) -> str:
     # JSONDecodeError ("Expecting value: line 1 column 1"), a RequestException /
     # ValueError subclass. Left to propagate it crashes the whole agent run
     # mid-demo, so every API call here degrades gracefully instead of raising.
-    titles = None
-    for delay in (0.5, 1.0):
-        try:
-            titles = wikipedia.search(query, results=max_results)
-            break
-        except (requests.exceptions.RequestException, ValueError):
-            time.sleep(delay)
-    if titles is None:
-        # Still failing after retries — degrade instead of crashing the agent.
-        try:
-            titles = wikipedia.search(query, results=max_results)
-        except (requests.exceptions.RequestException, ValueError):
-            return "No results found."
-
-    results = []
-    for title in titles:
-        try:
-            page = wikipedia.page(title, auto_suggest=False)
-            results.append(f"Title: {page.title}\nSummary: {page.summary[:500]}\n")
-        except (
-            wikipedia.exceptions.DisambiguationError,
-            wikipedia.exceptions.PageError,
-        ):
-            continue
-        except (requests.exceptions.RequestException, ValueError):
-            # Transient API junk for this title (JSONDecodeError etc.): one quick
-            # retry, then skip the title rather than crash the agent.
+    # The `wikipedia` library issues requests with no timeout, so a hung
+    # connection blocks the agent thread forever (this once froze a live demo
+    # for 10+ min). Bound the network calls with a socket-level timeout, scoped
+    # to this function and restored in finally so MLflow/LLM clients are
+    # unaffected. A timeout surfaces as requests.exceptions.Timeout (a
+    # RequestException) — caught below — but we also catch socket.timeout/OSError
+    # for safety so it degrades into the existing retry/skip path.
+    _old_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(10)
+    try:
+        titles = None
+        for delay in (0.5, 1.0):
             try:
-                time.sleep(0.5)
+                titles = wikipedia.search(query, results=max_results)
+                break
+            except (requests.exceptions.RequestException, ValueError, OSError, socket.timeout):
+                time.sleep(delay)
+        if titles is None:
+            # Still failing after retries — degrade instead of crashing the agent.
+            try:
+                titles = wikipedia.search(query, results=max_results)
+            except (requests.exceptions.RequestException, ValueError, OSError, socket.timeout):
+                return "No results found."
+
+        results = []
+        for title in titles:
+            try:
                 page = wikipedia.page(title, auto_suggest=False)
                 results.append(f"Title: {page.title}\nSummary: {page.summary[:500]}\n")
             except (
                 wikipedia.exceptions.DisambiguationError,
                 wikipedia.exceptions.PageError,
-                requests.exceptions.RequestException,
-                ValueError,
             ):
                 continue
-    return "\n---\n".join(results) if results else "No results found."
+            except (requests.exceptions.RequestException, ValueError, OSError, socket.timeout):
+                # Transient API junk for this title (JSONDecodeError etc.) or a
+                # socket timeout: one quick retry, then skip the title rather
+                # than crash the agent.
+                try:
+                    time.sleep(0.5)
+                    page = wikipedia.page(title, auto_suggest=False)
+                    results.append(f"Title: {page.title}\nSummary: {page.summary[:500]}\n")
+                except (
+                    wikipedia.exceptions.DisambiguationError,
+                    wikipedia.exceptions.PageError,
+                    requests.exceptions.RequestException,
+                    ValueError,
+                    OSError,
+                    socket.timeout,
+                ):
+                    continue
+        return "\n---\n".join(results) if results else "No results found."
+    finally:
+        socket.setdefaulttimeout(_old_timeout)
 
 
 # ---------------------------------------------------------------------------
