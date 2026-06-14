@@ -9,6 +9,7 @@ import concurrent.futures
 import functools
 import os
 import re
+from pathlib import Path
 
 # Load ~/.env so `uv run <script>` picks up OPENAI_API_KEY without manual
 # sourcing; load_dotenv does not override already-exported vars, so an
@@ -17,10 +18,39 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.expanduser("~/.env"))
 
+import litellm
 import mlflow
+import requests_cache
 from mlflow.genai.scorers import scorer
 
 from conciseness_judge import CONCISENESS_INSTRUCTIONS, build_conciseness_judge
+
+# ---------------------------------------------------------------------------
+# Bound every outbound network request so a single hung connection can never
+# freeze the demo (this happened live for 10+ min). The judge (make_judge) and
+# the prompt optimizer (MetaPromptOptimizer / dspy) both issue their LLM calls
+# through litellm, so setting litellm's global per-request timeout + retry count
+# once here covers that whole path: <=15s per attempt, <=2 retries on failure.
+# (The agent's own LLM calls go through ChatOpenAI, bounded in create_agent;
+# Wikipedia is bounded by a socket timeout in search_wikipedia.)
+litellm.request_timeout = 15
+litellm.num_retries = 2
+
+# Cache Wikipedia HTTP traffic ONLY: repeated lookups during a demo become
+# instant cache hits and work offline. Scoped to *.wikipedia.org so MLflow's
+# localhost tracking-server calls and OpenAI's API are NOT cached (caching those
+# would serve stale runs/completions). The `wikipedia` lib uses `requests`, so
+# this patch is transparent. The sqlite backend is safe for the concurrent
+# reads that run_scenarios issues from its worker threads.
+requests_cache.install_cache(
+    str(Path(__file__).parent / "wiki_cache"),
+    backend="sqlite",
+    urls_expire_after={
+        "*.wikipedia.org": requests_cache.NEVER_EXPIRE,
+        "*": requests_cache.DO_NOT_CACHE,
+    },
+    allowable_methods=["GET"],
+)
 
 # ---------------------------------------------------------------------------
 # MLflow setup
@@ -143,12 +173,21 @@ def create_agent(system_prompt: str):
     # Imported and enabled here (not at module load) so the dataset helpers
     # stay usable without the langchain/deepagents stack.
     from deepagents import create_deep_agent
+    from langchain_openai import ChatOpenAI
 
     # No once-guard: mlflow.genai.evaluate disables autolog on exit, so we must
     # re-enable it every time. autolog() is idempotent, so re-patching is harmless.
     mlflow.langchain.autolog()
+    # Passing AGENT_MODEL as a bare string lets deepagents build the chat model
+    # with no timeout, so a stuck OpenAI request hangs the agent thread forever.
+    # Build the chat model explicitly with a bounded per-request timeout and
+    # retry count instead (create_deep_agent accepts a BaseChatModel). Derive the
+    # model name from AGENT_MODEL so it stays the single source of truth.
+    _model = ChatOpenAI(
+        model=AGENT_MODEL.removeprefix("openai:"), timeout=15, max_retries=2
+    )
     return create_deep_agent(
-        model=AGENT_MODEL, tools=[search_wikipedia], system_prompt=system_prompt
+        model=_model, tools=[search_wikipedia], system_prompt=system_prompt
     )
 
 

@@ -12,4 +12,5 @@ dependencies = [
     "litellm",
     "python-dotenv",
     "requests",
+    "requests-cache",
 ]
