@@ -12,15 +12,14 @@ the Evaluation runs view for the "01-refine" eval run.
 """
 
 from mlflow.genai.optimize import optimize_prompts
-from mlflow.genai.optimize.optimizers import MetaPromptOptimizer
 
 from setup import (
-    JUDGE_MODEL,
     create_agent,
     get_has_sources_scorer,
     get_train_data,
     latest_prompt,
     predict_fn,
+    reflection_optimizer,
     run_scenarios,
 )
 
@@ -37,8 +36,7 @@ opt = optimize_prompts(
     predict_fn=predict_fn,
     train_data=get_train_data(),
     prompt_uris=[prompt_v1.uri],
-    optimizer=MetaPromptOptimizer(
-        reflection_model=JUDGE_MODEL,
+    optimizer=reflection_optimizer(
         guidelines="Responses MUST cite sources with URLs.",
     ),
     scorers=[has_sources],

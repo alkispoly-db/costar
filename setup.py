@@ -608,3 +608,34 @@ def traces_for_run(run_name):
 def latest_prompt():
     """Return the latest registered version of the research-agent prompt."""
     return mlflow.genai.load_prompt(PROMPT_NAME)
+
+
+# Per-attempt timeout (s) and retry cap for the optimizer's reflection LLM.
+REFLECTION_TIMEOUT = 15
+REFLECTION_NUM_RETRIES = 2
+
+
+def reflection_optimizer(guidelines: str) -> "MetaPromptOptimizer":
+    """Return a MetaPromptOptimizer whose reflection LLM is hard-bounded.
+
+    MetaPromptOptimizer takes ``reflection_model`` as a *string* and issues its
+    reflection call through ``_call_llm`` -> ``litellm.completion`` directly (it
+    does NOT use dspy). litellm's *global* ``request_timeout`` only acts as a
+    fallback there, and the optimizer pins its own 5-retry policy — so neither
+    our global ``litellm.request_timeout`` nor ``litellm.num_retries`` reliably
+    bounds this path, which is why a stuck reflection call hung the whole run.
+
+    The only honored injection point is ``lm_kwargs``: it flows
+    lm_kwargs -> inference_params -> ``litellm.completion(**kwargs)``, where an
+    explicit ``timeout`` wins over the global fallback and ``num_retries`` maps
+    onto litellm's ``max_retries``. So we set both here, giving every reflection
+    attempt a hard <=15s bound and capping retries at 2 — the optimizer fails
+    fast instead of hanging. JUDGE_MODEL stays the single source of truth.
+    """
+    from mlflow.genai.optimize.optimizers import MetaPromptOptimizer
+
+    return MetaPromptOptimizer(
+        reflection_model=JUDGE_MODEL,
+        lm_kwargs={"timeout": REFLECTION_TIMEOUT, "num_retries": REFLECTION_NUM_RETRIES},
+        guidelines=guidelines,
+    )

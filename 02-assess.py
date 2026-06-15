@@ -14,13 +14,15 @@ alignment (in 03-loop, with the aligned v2 judge). 02-refine builds the generic
 judge itself to compute its before-alignment verdicts — this phase logs human
 labels only, so the demo narrative stays clean.
 
-There is no TRACE phase in loop 2 — the traces already exist from loop 1
-(the '01-refine' run). We read them back and label them in place.
+There is no TRACE phase in loop 2 — the traces already exist from the baseline
+agent run (the '01-trace' run). We read them back and label them in place.
+Loop 2 only needs baseline agent traces to assess conciseness on, so it sources
+from '01-trace' rather than the (slower, optimizer-driven) '01-refine' step.
 
 After running, open the traces in the MLflow UI to see the human feedback.
 
-Run loop 1 (01-trace / 01-assess / 01-refine) first, then 02-add-judge.py —
-this phase reads the '01-refine' traces.
+Run 01-trace.py first, then 02-add-judge.py — this phase reads the
+'01-trace' traces.
 """
 
 import json
@@ -83,13 +85,13 @@ def trace_question(trace):
     return request["messages"][0]["content"]
 
 
-# ── Source traces from the most-recent loop-1 agent run ───────────────────
-traces = traces_for_run("01-refine")
+# ── Source traces from the baseline agent run ─────────────────────────────
+traces = traces_for_run("01-trace")
 if not traces:
-    print("No traces found for run '01-refine'. Run loop 1 first (01-refine.py).")
+    print("No traces found for run '01-trace'. Run 01-trace.py first.")
     sys.exit(1)
 
-print(f"Logging human labels on {len(traces)} loop-1 traces.")
+print(f"Logging human labels on {len(traces)} baseline traces.")
 
 # Log human feedback under a dedicated "02-assess" run so the next phase (and
 # the UI) can find this assessment work by name.

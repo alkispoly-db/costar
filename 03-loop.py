@@ -18,17 +18,16 @@ never a hardcoded version.
 """
 
 from mlflow.genai.optimize import optimize_prompts
-from mlflow.genai.optimize.optimizers import MetaPromptOptimizer
 from mlflow.genai.scorers import get_scorer
 
 from setup import (
-    JUDGE_MODEL,
     create_agent,
     experiment,
     get_has_sources_scorer,
     get_train_data,
     latest_prompt,
     predict_fn,
+    reflection_optimizer,
     run_scenarios,
 )
 
@@ -53,8 +52,7 @@ opt = optimize_prompts(
     predict_fn=predict_fn,
     train_data=get_train_data(),
     prompt_uris=[prompt.uri],
-    optimizer=MetaPromptOptimizer(
-        reflection_model=JUDGE_MODEL,
+    optimizer=reflection_optimizer(
         guidelines=(
             "Cite sources with URLs. Be concise and direct for simple factual "
             "questions; a thorough, multi-paragraph answer is appropriate for "

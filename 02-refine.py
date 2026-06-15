@@ -17,7 +17,7 @@ verdicts with the aligned judge for the "Agreement with humans: X/5 → Y/5"
 demo print. MemAlign learns purely from the human feedback + each trace's
 input/output, so the judge does not need to have scored the traces beforehand.
 
-Run 02-assess.py first — this phase re-reads the '01-refine' traces and aligns
+Run 02-assess.py first — this phase re-reads the '01-trace' traces and aligns
 against their human feedback. The registry is the handoff to loop 3 (no JSON
 file).
 """
@@ -37,10 +37,10 @@ from setup import JUDGE_MODEL, experiment, traces_for_run
 # build one here rather than loading the registered scorer.
 generic_judge = build_conciseness_judge(JUDGE_MODEL)
 
-# ── Re-fetch the loop-1 traces WITH their human assessments ───────────────
-base_traces = traces_for_run("01-refine")
+# ── Re-fetch the baseline traces WITH their human assessments ─────────────
+base_traces = traces_for_run("01-trace")
 if not base_traces:
-    print("No traces found for run '01-refine'. Run loop 1 first (01-refine.py).")
+    print("No traces found for run '01-trace'. Run 01-trace.py first.")
     sys.exit(1)
 
 traces = [mlflow.get_trace(t.info.trace_id) for t in base_traces]
