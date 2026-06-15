@@ -1,28 +1,26 @@
 """
 02 — ASSESS phase (coSTAR loop 2).
 
-Scores the existing traces with the registered conciseness judge and then adds
-a small set of (simulated) human assessments that encode a *learnable*
-distinction: explanatory "how/why/differences" questions deserve a thorough,
-multi-paragraph answer and should NOT be penalized for length (value=True),
-whereas simple factual questions are expected to be short, so a long answer is
-unnecessarily verbose (value=False). This is the A in STAR for loop 2:
-attach both the judge's verdicts and human labels to the loop-1 traces so the
-next phase can align the generic judge to that principle.
+Logs a small set of (simulated) human assessments on the loop-1 traces. The
+labels encode a *learnable* distinction: explanatory "how/why/differences"
+questions deserve a thorough, multi-paragraph answer and should NOT be penalized
+for length (value=True), whereas simple factual questions are expected to be
+short, so a long answer is unnecessarily verbose (value=False). This is the A in
+STAR for loop 2: attach human labels to the loop-1 traces so the next phase can
+align the generic judge to that principle.
 
-The generic conciseness judge (v1) is a one-sentence "is it concise? true/false"
-judge that tends to penalize ANY long answer. The human labels here teach the
-exception via their *rationales* — the natural-language signal MemAlign learns
-from — so the aligned judge stops penalizing length on explanatory questions.
+The conciseness LLM judge is NOT applied here. It is only *applied* later, after
+alignment (in 03-loop, with the aligned v2 judge). 02-refine builds the generic
+judge itself to compute its before-alignment verdicts — this phase logs human
+labels only, so the demo narrative stays clean.
 
 There is no TRACE phase in loop 2 — the traces already exist from loop 1
-(the '01-refine' run). We read them back and assess them in place.
+(the '01-refine' run). We read them back and label them in place.
 
-After running, open the traces in the MLflow UI to see the conciseness judge
-verdicts alongside the human feedback.
+After running, open the traces in the MLflow UI to see the human feedback.
 
 Run loop 1 (01-trace / 01-assess / 01-refine) first, then 02-add-judge.py —
-this phase reads the '01-refine' traces and the registered conciseness judge.
+this phase reads the '01-refine' traces.
 """
 
 import json
@@ -30,11 +28,8 @@ import sys
 
 import mlflow
 from mlflow.entities import AssessmentSource, AssessmentSourceType
-from mlflow.exceptions import MlflowException
-from mlflow.genai.scorers import get_scorer
-from mlflow.protos.databricks_pb2 import RESOURCE_DOES_NOT_EXIST, ErrorCode
 
-from setup import experiment, traces_for_run
+from setup import traces_for_run
 
 # ── Category-based human-label scheme (exactly 5 labels) ──────────────────
 #
@@ -42,12 +37,11 @@ from setup import experiment, traces_for_run
 # answers and the generic conciseness judge tends to say "not concise" for
 # every question. The labels encode a LEARNABLE rule that the judge is missing:
 #   * EXPLANATORY questions — a thorough, multi-paragraph answer is appropriate,
-#     so a long answer should NOT be penalized: human value=True. Where the
-#     generic judge said False, this label DISAGREES — the signal MemAlign learns.
+#     so a long answer should NOT be penalized: human value=True.
 #   * FACTUAL questions — a long, elaborate answer IS unnecessarily verbose:
-#     human value=False. This matches what the judge already says for verbose
-#     answers, but the rationale teaches *why* (a short answer was expected),
-#     anchoring the contrast against the explanatory group.
+#     human value=False.
+# Both the values and the contrasting RATIONALES carry the principle MemAlign
+# aligns to (the natural-language signal it learns from).
 EXPLANATORY_RATIONALE = (
     "This is an explanatory 'how/why' question — a thorough, multi-paragraph "
     "answer is appropriate here and should NOT be penalized for length."
@@ -95,45 +89,20 @@ if not traces:
     print("No traces found for run '01-refine'. Run loop 1 first (01-refine.py).")
     sys.exit(1)
 
-# ── Load the registered conciseness judge (v1 from 02-add-judge) ──────────
-try:
-    conciseness = get_scorer(name="conciseness", experiment_id=experiment.experiment_id)
-except MlflowException as e:
-    if e.error_code != ErrorCode.Name(RESOURCE_DOES_NOT_EXIST):
-        raise
-    print("No 'conciseness' scorer registered. Run `python 02-add-judge.py` first.")
-    sys.exit(1)
+print(f"Logging human labels on {len(traces)} loop-1 traces.")
 
-print(f"Loaded registered judge '{conciseness.name}'; assessing {len(traces)} traces.")
-
-# Score and add human feedback under a dedicated "02-assess" run so the next
-# phase (and the UI) can find this assessment work by name.
+# Log human feedback under a dedicated "02-assess" run so the next phase (and
+# the UI) can find this assessment work by name.
 with mlflow.start_run(run_name="02-assess"):
-    # ── A (part 1): run the judge on all traces ──────────────────────────
-    print("\n" + "=" * 70)
-    print("Running registered conciseness judge on all traces …")
-    print("=" * 70)
-    mlflow.genai.evaluate(data=traces, scorers=[conciseness])
-
-    # Re-fetch traces to pick up the judge's assessments, then extract verdicts.
-    traces = [mlflow.get_trace(t.info.trace_id) for t in traces]
-
-    judge_verdicts = {}
-    for trace in traces:
-        assessment = next((a for a in trace.info.assessments if a.name == "conciseness"), None)
-        judge_verdicts[trace.info.trace_id] = assessment.value if assessment else False
-
-    for tid, verdict in judge_verdicts.items():
-        print(f"  trace {tid}: judge says '{verdict}'")
-
-    # ── A (part 2): log category-based human feedback on 5 traces ────────
+    # ── A: log category-based human feedback on 5 traces ─────────────────
     #
     # The story for loop 2 is "align the judge from a *small* amount of human
-    # feedback": a domain expert labels only 5 of the 10 questions. Rather than
-    # arbitrary flips, the labels encode a learnable distinction (see
-    # LABEL_SCHEME above) — explanatory questions may run long (value=True),
-    # simple factual ones should stay short (value=False). Both the values and
-    # the contrasting RATIONALES carry the principle MemAlign aligns to.
+    # feedback": a domain expert labels only 5 of the questions. The labels
+    # encode a learnable distinction (see LABEL_SCHEME above) — explanatory
+    # questions may run long (value=True), simple factual ones should stay short
+    # (value=False). Both the values and the contrasting RATIONALES carry the
+    # principle MemAlign aligns to. The judge itself is applied later, after
+    # alignment — not here.
     print("\n" + "=" * 70)
     print("Logging human feedback (category-based) on a small labeled subset …")
     print("=" * 70)
@@ -149,17 +118,12 @@ with mlflow.start_run(run_name="02-assess"):
 
     n_explanatory = 0
     n_factual = 0
-    n_disagree = 0
     for question, category, human_val, rationale in LABEL_SCHEME:
         trace = traces_by_question.get(question)
         if trace is None:
             print(f"  SKIP (no trace matched): {question!r}")
             continue
 
-        judge_val = judge_verdicts[trace.info.trace_id]
-        disagrees = bool(human_val) != bool(judge_val)
-        if disagrees:
-            n_disagree += 1
         if category == "explanatory":
             n_explanatory += 1
         else:
@@ -172,17 +136,14 @@ with mlflow.start_run(run_name="02-assess"):
             source=human_source,
             rationale=rationale,
         )
-        marker = "DISAGREE" if disagrees else "agree"
-        print(
-            f"  [{category:<11}] judge={str(judge_val):<5}  human={str(human_val):<5}  "
-            f"[{marker}]  {question}"
-        )
+        print(f"  [{category:<11}] human={str(human_val):<5}  {question}")
 
     n_labeled = n_explanatory + n_factual
     print(
-        f"\n  Labeled {n_labeled}/{len(traces)} "
-        f"({n_explanatory} explanatory, {n_factual} factual); "
-        f"{n_disagree} disagree with the generic judge."
+        f"\n  Logged {n_labeled} human labels: "
+        f"{n_explanatory} explanatory (concise=True), "
+        f"{n_factual} factual (concise=False). "
+        f"The judge is applied later, after alignment."
     )
 
-print("\nOpen the traces in the MLflow UI to see judge verdicts + human feedback.")
+print("\nOpen the traces in the MLflow UI to see the human feedback.")
