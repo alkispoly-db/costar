@@ -5,7 +5,6 @@ Sets up the MLflow experiment, Deep Agent factory, tools, prompt registry,
 and evaluation scenarios. Run this module before the numbered scripts.
 """
 
-import concurrent.futures
 import functools
 import os
 import re
@@ -40,8 +39,7 @@ litellm.num_retries = 2
 # instant cache hits and work offline. Scoped to *.wikipedia.org so MLflow's
 # localhost tracking-server calls and OpenAI's API are NOT cached (caching those
 # would serve stale runs/completions). The `wikipedia` lib uses `requests`, so
-# this patch is transparent. The sqlite backend is safe for the concurrent
-# reads that run_scenarios issues from its worker threads.
+# this patch is transparent.
 requests_cache.install_cache(
     str(Path(__file__).parent / "wiki_cache"),
     backend="sqlite",
@@ -501,48 +499,32 @@ def run_scenarios(agent, scenarios=None, *, run_name, scorers=None):
     the agent traces (only the caller's own validation traces land on it), so
     *run_name* is required and run_scenarios owns the run.
 
-    Scenarios are invoked concurrently on a thread pool so the trace step's
-    wall-clock is ~the slowest single scenario instead of the sum. The active
-    run and ``get_last_active_trace_id()`` are both thread-local, so each worker
-    re-enters the run with ``mlflow.start_run(run_id=...)`` before invoking the
-    agent — that sets the thread-local active run so the trace associates with
-    *run_name*, and captures the trace id from within the same thread. Resuming
-    the same run id concurrently is safe: the worker's ``with`` is a nested
-    resume that restores the prior thread-local stack on exit without ending the
-    run (only the outer ``with`` ends it).
+    Scenarios are invoked sequentially, in order. (An earlier ThreadPoolExecutor
+    version intermittently deadlocked under the real agent — concurrent mlflow
+    run-context + autolog tracing + the agent's own nested threads contended on
+    mlflow locks. The sequential loop is slower on the trace step but reliable.)
 
     When *scorers* is provided, ``mlflow.genai.evaluate`` runs on the collected
     traces inside the same run, so the score metric lands on this run; each
     scorer's ``"{name}/mean"`` value is printed. The return contract is
-    unchanged: the list of traces (re-fetched so assessments are visible). Order
-    is undefined — callers match by question, not position.
+    unchanged: the list of traces (re-fetched so assessments are visible).
     """
     if scenarios is None:
         scenarios = load_scenarios()
 
-    with mlflow.start_run(run_name=run_name) as run:
-        run_id = run.info.run_id
+    with mlflow.start_run(run_name=run_name):
         # A prior mlflow.genai.evaluate disables autolog on exit; re-enable it
-        # here so the agent invocations below are actually traced. Enable before
-        # dispatching workers so every thread sees autolog active.
+        # here so the agent invocations below are actually traced.
         mlflow.langchain.autolog()
 
-        def _invoke(scenario):
-            # Re-enter the run in THIS thread: the active run is thread-local, so
-            # without this the trace would land with no run association.
-            with mlflow.start_run(run_id=run_id):
-                agent.invoke(
-                    {"messages": [{"role": "user", "content": scenario["question"]}]}
-                )
-                trace_id = mlflow.get_last_active_trace_id()
+        trace_ids = []
+        for scenario in scenarios:
+            agent.invoke(
+                {"messages": [{"role": "user", "content": scenario["question"]}]}
+            )
+            trace_id = mlflow.get_last_active_trace_id()
             print(f"  [{run_name}] {scenario['question'][:60]}…  trace={trace_id}")
-            return trace_id
-
-        max_workers = min(8, len(scenarios))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-            # list() over map() preserves submission order and re-raises worker
-            # exceptions here rather than swallowing them.
-            trace_ids = list(pool.map(_invoke, scenarios))
+            trace_ids.append(trace_id)
 
         mlflow.flush_trace_async_logging()
         traces = [mlflow.get_trace(tid) for tid in trace_ids]
