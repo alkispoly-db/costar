@@ -4,7 +4,7 @@ Code examples for the [coSTAR blog post](https://www.databricks.com/blog/costar-
 
 coSTAR runs **STAR loops** — Scenario → Trace → Assess → Refine — to improve an agent systematically. The demo walks through three loops over a Wikipedia research agent:
 
-- **Loop 1 — objective (citations).** Refine the agent against a deterministic citation scorer.
+- **Loop 1 — objective (citations).** Refine the agent against a citation judge (`has_sources`).
 - **Loop 2 — align the judge.** Conciseness is subjective, so before refining for it we first align a generic LLM judge to human preferences.
 - **Loop 3 — subjective (conciseness).** Refine the agent for conciseness using the *aligned* judge, while guarding citations from regressing.
 
@@ -54,7 +54,7 @@ Open <http://localhost:5000> and browse the `costar-research-agent` experiment:
 
 - **Datasets** — `research-scenarios`, the eval dataset of **10** research scenarios.
 - **Prompts** — `research-agent` with three versions: v1 (verbose baseline), v2 (optimized for citations), v3 (optimized for citations + conciseness). Click a version to diff iterations.
-- **Judges** — two registered scorers: `has_sources` (deterministic citation check) and `conciseness` with two versions, v1 (generic) → v2 (aligned to human labels).
+- **Judges** — two registered scorers: `has_sources` (an LLM judge: does the answer cite a source URL?) and `conciseness` with two versions, v1 (generic) → v2 (aligned to human labels).
 - **Traces** — full span trees per scenario: planning, Wikipedia tool calls, LLM reasoning.
 - **Evaluation runs** — one run per phase (`01-trace`, `01-assess`, `01-refine`, `03-loop`, …) with the scorer means, plus the `optimize_prompts()` optimization runs and the judge-alignment results.
 
