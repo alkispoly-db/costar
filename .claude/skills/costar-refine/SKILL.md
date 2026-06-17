@@ -41,6 +41,10 @@ Run the eval script from the skill directory with the prompt name and new versio
 uv run --no-project --python .venv -- python .claude/skills/costar-refine/eval.py <prompt_name> <version_number>
 ```
 
+Run this command in the FOREGROUND and WAIT for it to print its `EVAL_RESULT:` line
+before doing anything else. NEVER run the eval in the background. Do not end your turn
+while an eval is still running.
+
 The script runs the agent on test scenarios and prints a JSON line with the scores, e.g.:
 ```
 EVAL_RESULT: {"has_sources": 0.87, "conciseness": 0.6}
@@ -55,7 +59,9 @@ EVAL_RESULT: {"has_sources": 0.87, "conciseness": 0.6}
 
 ### Step 5: Save the result
 
-Write the best version number to `_refine_result.json`:
+Write the best version number to `_refine_result.json`. This MUST be your LAST action,
+performed only after the eval has returned its `EVAL_RESULT:` line. Do not end your turn
+while an eval is still running — the file MUST exist before you finish.
 
 ```python
 import json
@@ -68,3 +74,5 @@ Path("_refine_result.json").write_text(json.dumps({"version": best_version}))
 - Only modify the prompt template text
 - Do NOT change tools, agent code, or evaluation logic
 - The prompt has no template variables — do not add {{ }} patterns
+- Do not run the eval asynchronously or end your turn waiting for a background task;
+  `_refine_result.json` must exist before you finish.

@@ -35,7 +35,13 @@ def refine_with_claude_code(
         f"scores: {scores_str}). "
         f"Goal: {goal} "
         f"Use the eval script in the skill directory to verify your changes improve the scores. "
-        f"Register the best prompt and write the version number to _refine_result.json."
+        f"CRITICAL: Run the eval script in the FOREGROUND and WAIT for it to print its "
+        f"'EVAL_RESULT:' line before doing anything else. Do NOT run the eval in the "
+        f"background, and do NOT end your turn while an eval is still running. "
+        f"When you have found the best version, register it, then write its version number "
+        f"to _refine_result.json. "
+        f"Writing _refine_result.json MUST be your final action, and the file MUST exist "
+        f"before you finish. Do not stop or hand off while waiting on a background task."
     )
 
     print(f"\nInvoking Claude Code headlessly …")
@@ -47,18 +53,23 @@ def refine_with_claude_code(
     # an existing Claude Code session (the parent that launched this script).
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
-    result = subprocess.run(
-        [
-            "claude",
-            "-p", prompt,
-            "--dangerously-skip-permissions",
-            "--allowedTools", "Bash,Read,Write,Edit",
-        ],
-        cwd=project,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
+    claude_cmd = [
+        "claude",
+        "-p", prompt,
+        "--dangerously-skip-permissions",
+        "--allowedTools", "Bash,Read,Write,Edit",
+    ]
+
+    def run_claude() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            claude_cmd,
+            cwd=project,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    result = run_claude()
 
     if result.returncode != 0:
         print(f"  Claude Code stderr:\n{result.stderr}")
@@ -69,6 +80,19 @@ def refine_with_claude_code(
         lines = result.stdout.strip().splitlines()
         for line in lines[-5:]:
             print(f"    {line}")
+
+    # A single retry catches the rare case where the nested claude ended
+    # without writing the result file (e.g. it backgrounded the eval).
+    if not result_file.exists():
+        print("  _refine_result.json missing — retrying Claude Code once …")
+        result = run_claude()
+        if result.returncode != 0:
+            print(f"  Claude Code stderr:\n{result.stderr}")
+            raise RuntimeError(f"Claude Code exited with code {result.returncode}")
+        print(f"  Claude Code retry finished successfully.")
+        if result.stdout:
+            for line in result.stdout.strip().splitlines()[-5:]:
+                print(f"    {line}")
 
     if not result_file.exists():
         raise RuntimeError(
