@@ -120,8 +120,9 @@ else:
         prompt_version=baseline_prompt.version,
         scores=scores,
         goal=(
-            "Cite sources with URLs; be concise for simple factual questions "
-            "but thorough for explanatory how/why questions."
+            "Achieve at least an 80% pass rate on the conciseness scorer "
+            "(conciseness/mean >= 0.8) while keeping has_sources at or near 100%. "
+            "Stop as soon as conciseness reaches 0.8."
         ),
         project_dir=str(Path(__file__).parent),
     )

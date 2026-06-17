@@ -1,7 +1,8 @@
 # coSTAR Prompt Refinement
 
 You are improving an AI agent's system prompt based on evaluation feedback.
-This is an iterative process: rewrite the prompt, verify with the eval script, and iterate until scores improve.
+This is a target-driven process: rewrite the prompt, verify with the eval script,
+and iterate ONLY until the goal's target pass rate is met — then stop immediately.
 
 ## Context
 
@@ -50,12 +51,22 @@ The script runs the agent on test scenarios and prints a JSON line with the scor
 EVAL_RESULT: {"has_sources": 0.87, "conciseness": 0.6}
 ```
 
-### Step 4: Compare and iterate
+### Step 4: Check the target and stop as soon as it is met
 
-- Compare the new scores against the baseline scores provided in the prompt
-- If the target metrics improved (or are already at 1.0) without regressing others, you're done
-- If not, analyze what went wrong, rewrite the prompt again, register a new version, and re-evaluate
-- Do at most 3 iterations total
+The `goal` you are given states a **TARGET pass rate for a named scorer** (e.g.
+"conciseness/mean >= 0.8"). This target is your stop condition:
+
+- After each eval, read the named scorer's mean from the `EVAL_RESULT:` line.
+- **As soon as that scorer's mean is at or above the target, STOP immediately and
+  finalize the current version — do NOT keep iterating to find a "better" prompt.**
+  Meeting the target is the whole job; optimizing past it wastes time.
+- If the target is not yet met, analyze what went wrong, rewrite the prompt,
+  register a new version, and re-evaluate.
+- Respect any guard metrics in the goal (e.g. keep `has_sources` at or near 1.0):
+  do not regress them while pushing the target metric up.
+- Safety cap: do at most 3 iterations total. If the target is still not met after
+  3 iterations, finalize the best version you have. But the target — not the cap —
+  is the primary stop condition: stop the instant it is met, even on iteration 1.
 
 ### Step 5: Save the result
 
