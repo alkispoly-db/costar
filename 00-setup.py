@@ -21,7 +21,7 @@ SDK; it does NOT touch the sqlite file or restart the server. It is idempotent:
 running it twice lands on the same clean state with no errors and no growth.
 
 This script is a SINGLE command: it first ensures the MLflow server is running
-on :5000 (starting a detached server backed by the worktree's ``mlflow.db`` if
+on :5000 (starting a detached server backed by the repo's ``mlflow.db`` if
 it is down) and then performs the reset+seed. The server is launched detached so
 it survives this script exiting — the later phase scripts (01-trace … 03-loop)
 reuse it. The server-ensure step is idempotent: if a server is already up it is
