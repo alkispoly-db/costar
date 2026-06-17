@@ -1,92 +1,80 @@
 # coSTAR: Ship AI Agents Fast Without Breaking Things
 
-Code examples for the [coSTAR blog post](https://www.databricks.com/blog/costar-how-we-ship-ai-agents-databricks-fast-without-breaking-things), demonstrating how to use MLflow to iteratively refine both AI agents and the judges that evaluate them.
+Code examples for the [coSTAR blog post](https://www.databricks.com/blog/costar-how-we-ship-ai-agents-databricks-fast-without-breaking-things), demonstrating how to use MLflow to iteratively refine both an AI agent and the LLM judges that evaluate it.
 
-## The Three-Loop Narrative
+coSTAR runs **STAR loops** — Scenario → Trace → Assess → Refine — to improve an agent systematically. The demo walks through three loops over a Wikipedia research agent:
 
-coSTAR uses **STAR loops** (Scenario → Trace → Assess → Refine) to improve agents systematically:
+- **Loop 1 — objective (citations).** Refine the agent against a deterministic citation scorer.
+- **Loop 2 — align the judge.** Conciseness is subjective, so before refining for it we first align a generic LLM judge to human preferences.
+- **Loop 3 — subjective (conciseness).** Refine the agent for conciseness using the *aligned* judge, while guarding citations from regressing.
 
-| Loop | Script | What it does |
-|------|--------|-------------|
-| **Loop 1** | `01_star_objective.py` | Refine the agent with an objective citation scorer |
-| **Loop 2** | `02_star_judge_align.py` | Align a generic conciseness LLM judge to match human preferences (subjective criterion — must align the judge first) |
-| **Loop 3** | `03_star_subjective.py` | Refine the agent for conciseness with the aligned judge, while ensuring citations don't regress |
+The "coupled" in coSTAR is loop 2: trust the judge before you trust its scores.
 
+## Setup
 
-## Prerequisites
+This is a [uv](https://docs.astral.sh/uv/) project. Dependencies are pinned in `pyproject.toml` / `uv.lock` (the agent stack: `mlflow`, `deepagents`, `langchain-openai`, `dspy`, `wikipedia`, `openai`, `litellm`, `requests-cache`, `python-dotenv`). There is no manual venv to create or activate — `uv run` resolves the environment on first use.
+
+Run every script with `uv run`:
 
 ```bash
-pip install mlflow>=3.10 deepagents wikipedia openai litellm
+uv run 00-setup.py
 ```
 
-## Environment Variables
+`setup.py` loads your `OPENAI_API_KEY` automatically from `~/.env` (an already-exported key still wins), so no manual `export` is needed. The key is required for the LLM judge and the agent; seeding and the dataset test do not need it.
+
+There is **no manual MLflow server to start**. `uv run 00-setup.py` resets the experiment to a clean state *and* auto-starts a local sqlite-backed MLflow server on `:5000` (detached, so the later scripts reuse it). If a server is already up, it is left alone.
+
+## Demo flow
+
+Run the eight per-phase scripts in order. Each maps to one STAR phase, and each hands off to the next through MLflow (by run name or the registry) — no files threaded between them.
 
 ```bash
-export OPENAI_API_KEY="sk-..."      # Required for the LLM judge and Deep Agent
-```
+# Loop 1 — objective: citations
+uv run 00-setup.py        # reset experiment, seed dataset, start server
+uv run 01-trace.py        # Trace:  run baseline agent (prompt v1) over the scenarios
+uv run 01-assess.py       # Assess: score traces with the has_sources judge
+uv run 01-refine.py       # Refine: optimize_prompts() → research-agent v2
 
-## Start MLflow
+# Loop 2 — align the conciseness judge
+uv run 02-add-judge.py    # register the generic conciseness judge (v1)
+uv run 02-assess.py       # log simulated human conciseness labels on 5 of the traces
+uv run 02-refine.py       # MemAlign the judge to the labels → aligned conciseness v2
 
-```bash
-mlflow server --backend-store-uri sqlite:///mlflow.db --host 0.0.0.0 --port 5000
-```
-
-A SQL backend is required: the scenarios are stored in an MLflow GenAI
-evaluation dataset (`research-scenarios`), which is not available on the
-default file store.
-
-Editing the `SCENARIOS` list in `setup.py` after the dataset exists only inserts/updates records by input-hash via `merge_records` — removing a scenario from the list will **not** delete it from `research-scenarios` (use `delete_records` for that).
-
-Then open http://localhost:5000 to see traces, evaluations, and feedback.
-
-## Running the Examples
-
-Run the scripts in order — each builds on the previous:
-
-```bash
-# Loop 1: Agent refinement with citation scorer
-python 01_star_objective.py
-
-# Loop 2: Judge alignment for conciseness
-python 02_star_judge_align.py
-
-# Loop 3: Agent refinement with aligned conciseness judge
-python 03_star_subjective.py
+# Loop 3 — subjective: conciseness
+uv run 03-loop.py         # Refine the prompt for conciseness with the aligned judge → v3
 ```
 
 ### Alternative Refine engine: Claude Code
 
-By default, Loops 1 and 3 use the `optimize_prompts()` SDK in MLflow for the Refinement step. `optimize_prompts()` works by rewriting the prompt text, assuming that tools, agent logic, and everything else are fixed.
+By default the Refine phases use MLflow's `optimize_prompts()`, which rewrites the prompt text while treating tools and agent logic as fixed. Claude Code can be used as a more general optimization engine instead — it can read traces, inspect failure patterns, and go beyond prompt rewrites (rewrite tools, add tools, rewire agent logic). It is driven by the `costar-refine` skill under `.claude/skills/`, which evaluates each candidate prompt via `eval.py`. This requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and available as `claude` on your PATH.
 
-An alternative is to use Claude Code as a more general optimization engine. Claude Code can read traces, inspect failure patterns, and go beyond prompt rewrites — for example, it can rewrite existing tools, add new tools to the agent, or rewire the agent's logic. In this setup, Claude Code is equipped with a skill that teaches the basic steps of the coSTAR framework:
+## What you'll see in the MLflow UI
 
-```bash
-python 01_star_objective.py --refine=claude-code
-python 03_star_subjective.py --refine=claude-code
-```
+Open <http://localhost:5000> and browse the `costar-research-agent` experiment:
 
-This requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and available as `claude` on your PATH.
-
-Each script prints a comparison table showing improvement across agent versions.
-
-## What You'll See in the MLflow UI
-
-- **Prompts** tab: "research-agent" with 3 versions (v1: baseline, v2: optimized for citations, v3: optimized for citations + conciseness) — click any version to see diffs between prompt iterations
-- **Traces** with full span trees: planning, tool calls (Wikipedia search), LLM reasoning
-- **Assessments** from both automated scorers and simulated human feedback
-- **Evaluation results** comparing agent versions side by side
-- **Optimization runs** logged by `optimize_prompts()` with baseline → optimized scores
-- **Judge alignment** showing how human feedback refines the judge's instructions
+- **Datasets** — `research-scenarios`, the eval dataset of **10** research scenarios.
+- **Prompts** — `research-agent` with three versions: v1 (verbose baseline), v2 (optimized for citations), v3 (optimized for citations + conciseness). Click a version to diff iterations.
+- **Judges** — two registered scorers: `has_sources` (deterministic citation check) and `conciseness` with two versions, v1 (generic) → v2 (aligned to human labels).
+- **Traces** — full span trees per scenario: planning, Wikipedia tool calls, LLM reasoning.
+- **Evaluation runs** — one run per phase (`01-trace`, `01-assess`, `01-refine`, `03-loop`, …) with the scorer means, plus the `optimize_prompts()` optimization runs and the judge-alignment results.
 
 ## File Structure
 
 ```
-├── README.md                # This file
-├── setup.py                 # Shared: agent factory, tools, MLflow experiment, scenarios
-├── 01_star_objective.py     # Loop 1: agent refinement with citation scorer
-├── 02_star_judge_align.py   # Loop 2: judge alignment for conciseness
-├── 03_star_subjective.py    # Loop 3: agent refinement with aligned judge
-├── refine_claude_code.py    # Claude Code headless Refine engine
+├── README.md              # This file
+├── pyproject.toml         # uv project + pinned dependencies (uv.lock alongside)
+├── setup.py               # Shared: agent factory, tools, MLflow experiment, scenarios, scorers
+├── conciseness_judge.py   # The generic conciseness judge (instructions + builder)
+├── 00-setup.py            # Reset + seed the experiment; auto-start the MLflow server
+├── 01-trace.py            # Loop 1 · Trace
+├── 01-assess.py           # Loop 1 · Assess (has_sources judge)
+├── 01-refine.py           # Loop 1 · Refine (optimize_prompts → prompt v2)
+├── 02-add-judge.py        # Loop 2 · register the generic conciseness judge
+├── 02-assess.py           # Loop 2 · Assess (log human conciseness labels)
+├── 02-refine.py           # Loop 2 · Refine (MemAlign → aligned conciseness judge v2)
+├── 03-loop.py             # Loop 3 · Refine for conciseness with the aligned judge → prompt v3
+├── tests/                 # Standalone smoke test for the eval dataset (no OpenAI key needed)
 └── .claude/skills/costar-refine/
-    └── SKILL.md             # Skill for Claude Code prompt refinement
+    ├── SKILL.md           # Skill teaching Claude Code the coSTAR refine workflow
+    └── eval.py            # Scores a prompt version against the scenarios
 ```

@@ -356,7 +356,7 @@ def get_train_data():
 # Scorer: deterministic has_sources, no LLM needed
 # ---------------------------------------------------------------------------
 # This is the deterministic regex has_sources scorer, used by loop 3
-# (03_star_subjective.py) and .claude/skills/costar-refine/eval.py. It is
+# (03-loop.py) and .claude/skills/costar-refine/eval.py. It is
 # distinct from the registered "has_sources" judge below (get_has_sources_scorer),
 # which loop 1 uses. Custom @scorer functions can't be registered on OSS MLflow,
 # so loop 1 needs the judge form; the regex form is kept for the loops/eval that
@@ -536,17 +536,6 @@ def run_scenarios(agent, scenarios=None, *, run_name, scorers=None):
                 print(f"  [{run_name}] {key} = {result.metrics[key]:.0%}")
 
     return traces
-
-
-# ---------------------------------------------------------------------------
-# Helper: find a prompt version by tag
-# ---------------------------------------------------------------------------
-def find_prompt_by_tag(prompt_name, tag_key, tag_value):
-    client = mlflow.MlflowClient()
-    for pv in client.search_prompt_versions(prompt_name):
-        if pv.tags.get(tag_key) == tag_value:
-            return pv
-    raise RuntimeError(f"No '{prompt_name}' version with tag {tag_key}={tag_value}")
 
 
 # ---------------------------------------------------------------------------

@@ -33,8 +33,9 @@ def main():
         setup.get_scenario_dataset()
         scenarios = setup.load_scenarios()
 
-        assert len(scenarios) == 15, (
-            f"call {call}: expected 15 records, got {len(scenarios)}"
+        assert len(scenarios) == len(setup.SCENARIOS), (
+            f"call {call}: expected {len(setup.SCENARIOS)} records, "
+            f"got {len(scenarios)}"
         )
 
         questions = [s["question"] for s in scenarios]
@@ -56,7 +57,10 @@ def main():
                 f"call {call}: expected_facts mismatch for {s['question']!r}"
             )
 
-    print("OK: research-scenarios seeds 15 records, idempotent, ordered.")
+    print(
+        f"OK: research-scenarios seeds {len(setup.SCENARIOS)} records, "
+        "idempotent, ordered."
+    )
 
 
 if __name__ == "__main__":

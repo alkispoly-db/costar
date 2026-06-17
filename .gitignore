@@ -7,3 +7,4 @@ mlruns/
 wiki_cache.sqlite
 *.log
 _refine_result.json
+_aligned_judge.json

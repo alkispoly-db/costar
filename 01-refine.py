@@ -46,7 +46,7 @@ new_prompt = opt.optimized_prompts[0]
 
 # ── Final eval of the optimized prompt under the "01-refine" run ──────────
 # Generate fresh traces with the new prompt and score them in one shot:
-# run_scenarios opens the "01-refine" run, associates all 15 agent traces with
+# run_scenarios opens the "01-refine" run, associates all 10 agent traces with
 # it, and (via scorers=) runs evaluate inside that same run so the
 # has_sources/mean metric lands on it too. It also prints the final mean.
 agent = create_agent(new_prompt.template)

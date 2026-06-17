@@ -11,7 +11,7 @@ from here without a circular import.
 
 from mlflow.genai.judges import make_judge
 
-# Instructions match the inline judge used during alignment (02_star_judge_align.py)
+# Instructions match the generic judge used during alignment (02-refine.py)
 # verbatim so the registered scorer behaves identically.
 CONCISENESS_INSTRUCTIONS = (
     "Evaluate if {{ outputs }} provides a concise, direct answer to "
