@@ -12,7 +12,7 @@ import os
 import sys
 import tempfile
 
-# Point setup at a throwaway sqlite backend BEFORE importing it, so the test
+# Point common at a throwaway sqlite backend BEFORE importing it, so the test
 # needs no running MLflow server.
 _tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp_db.close()
@@ -21,20 +21,20 @@ os.environ["MLFLOW_TRACKING_URI"] = f"sqlite:///{_tmp_db.name}"
 # Import from the repo root regardless of the cwd the test is launched from.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import setup  # noqa: E402
+import common  # noqa: E402
 
 
 def main():
-    expected_questions = [s["question"] for s in setup.SCENARIOS]
-    expected_facts = {s["question"]: s["expected_facts"] for s in setup.SCENARIOS}
+    expected_questions = [s["question"] for s in common.SCENARIOS]
+    expected_facts = {s["question"]: s["expected_facts"] for s in common.SCENARIOS}
 
     # Call twice to exercise idempotency of the seed/get-or-create path.
     for call in (1, 2):
-        setup.get_scenario_dataset()
-        scenarios = setup.load_scenarios()
+        common.get_scenario_dataset()
+        scenarios = common.load_scenarios()
 
-        assert len(scenarios) == len(setup.SCENARIOS), (
-            f"call {call}: expected {len(setup.SCENARIOS)} records, "
+        assert len(scenarios) == len(common.SCENARIOS), (
+            f"call {call}: expected {len(common.SCENARIOS)} records, "
             f"got {len(scenarios)}"
         )
 
@@ -58,7 +58,7 @@ def main():
             )
 
     print(
-        f"OK: research-scenarios seeds {len(setup.SCENARIOS)} records, "
+        f"OK: research-scenarios seeds {len(common.SCENARIOS)} records, "
         "idempotent, ordered."
     )
 

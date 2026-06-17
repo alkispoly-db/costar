@@ -16,7 +16,7 @@ import sys
 
 import mlflow
 
-from setup import get_has_sources_scorer, traces_for_run
+from common import get_has_sources_scorer, traces_for_run
 
 has_sources = get_has_sources_scorer()
 

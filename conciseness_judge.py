@@ -2,10 +2,10 @@
 Canonical home for the conciseness LLM judge.
 
 A single source of truth for the conciseness judge's instructions and its
-``make_judge`` construction, shared by ``setup.py`` (which registers it as an
+``make_judge`` construction, shared by ``common.py`` (which registers it as an
 experiment scorer in loop 2) and any per-phase script that needs the judge.
 
-Imports only from mlflow — NOT from ``setup`` — so that ``setup.py`` can import
+Imports only from mlflow — NOT from ``common`` — so that ``common.py`` can import
 from here without a circular import.
 """
 
@@ -23,7 +23,7 @@ def build_conciseness_judge(model):
     """Build the conciseness judge for *model* (e.g. ``"openai:/gpt-4.1-mini"``).
 
     Returns an unregistered judge; callers that want a first-class experiment
-    scorer (e.g. ``setup.get_conciseness_scorer``) register the result.
+    scorer (e.g. ``common.get_conciseness_scorer``) register the result.
     """
     return make_judge(
         name="conciseness",

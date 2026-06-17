@@ -31,7 +31,7 @@ import sys
 import mlflow
 from mlflow.entities import AssessmentSource, AssessmentSourceType
 
-from setup import traces_for_run
+from common import traces_for_run
 
 # ── Category-based human-label scheme (exactly 5 labels) ──────────────────
 #
@@ -77,7 +77,7 @@ def trace_question(trace):
     """Return the user question text from a trace's request inputs.
 
     The agent is invoked with ``{"messages": [{"role": "user", "content": q}]}``
-    (see ``setup.run_scenarios``), serialized as the trace request JSON. We pull
+    (see ``common.run_scenarios``), serialized as the trace request JSON. We pull
     the first user message's content so traces can be matched to target
     questions by exact text rather than fragile positional index alignment.
     """

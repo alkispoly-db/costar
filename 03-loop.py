@@ -20,7 +20,7 @@ never a hardcoded version.
 from mlflow.genai.optimize import optimize_prompts
 from mlflow.genai.scorers import get_scorer
 
-from setup import (
+from common import (
     create_agent,
     experiment,
     get_has_sources_scorer,

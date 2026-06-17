@@ -28,7 +28,7 @@ import mlflow
 from mlflow.genai.judges.optimizers import MemAlignOptimizer
 
 from conciseness_judge import build_conciseness_judge
-from setup import JUDGE_MODEL, experiment, traces_for_run
+from common import JUDGE_MODEL, experiment, traces_for_run
 
 # ── Build the generic conciseness judge to align ──────────────────────────
 # Same instructions as the registered v1 (single source of truth in

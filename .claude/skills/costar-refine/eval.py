@@ -12,7 +12,7 @@ import sys
 import mlflow
 from mlflow.genai.scorers import get_scorer
 
-from setup import create_agent, experiment, has_sources, run_scenarios
+from common import create_agent, experiment, has_sources, run_scenarios
 
 # Load the aligned conciseness judge from the registry (loop 2 registers it as
 # the latest 'conciseness' version). If no such scorer is registered yet —

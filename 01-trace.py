@@ -12,7 +12,7 @@ inspect the captured traces.
 No standalone scoring — see 01-assess.py for the A phase.
 """
 
-from setup import create_agent, latest_prompt, run_scenarios
+from common import create_agent, latest_prompt, run_scenarios
 
 # v1 in the clean state; create_agent loads the langchain/deepagents stack.
 prompt = latest_prompt()

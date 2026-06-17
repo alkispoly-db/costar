@@ -13,7 +13,7 @@ the Evaluation runs view for the "01-refine" eval run.
 
 from mlflow.genai.optimize import optimize_prompts
 
-from setup import (
+from common import (
     create_agent,
     get_has_sources_scorer,
     get_train_data,

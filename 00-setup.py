@@ -7,13 +7,13 @@ contains exactly:
   * the ``research-scenarios`` eval dataset (10 records),
   * the ``has_sources`` judge registered as an experiment scorer,
   * the ``research-agent`` prompt whose LATEST version is the current (verbose)
-    ``setup.SYSTEM_PROMPT_V1`` — the deliberately verbose baseline,
+    ``common.SYSTEM_PROMPT_V1`` — the deliberately verbose baseline,
 
 and nothing else: no ``conciseness`` scorer (that belongs to loop 2), no
 traces, no eval/agent runs.
 
 The prompt reset DELETES the entire ``research-agent`` prompt (all versions)
-and RE-REGISTERS it from the current ``setup.SYSTEM_PROMPT_V1`` so the baseline
+and RE-REGISTERS it from the current ``common.SYSTEM_PROMPT_V1`` so the baseline
 always reflects the in-code prompt, even if an older v1 was registered before.
 
 The reset is programmatic — it talks to the live MLflow server on :5000 via the
@@ -32,7 +32,7 @@ call the model, and ensure_server() makes no agent calls.
 """
 
 # NOTE: only stdlib at module top — the server must be up before we import
-# mlflow/setup (importing setup connects to the tracking server and registers
+# mlflow/common (importing common connects to the tracking server and registers
 # the prompt). ensure_server() runs first, then the mlflow imports happen.
 import os
 import subprocess
@@ -100,7 +100,7 @@ def _server_healthy(timeout=1.0):
         return False
 
 
-# Bring the tracking server up BEFORE importing mlflow/setup below.
+# Bring the tracking server up BEFORE importing mlflow/common below.
 ensure_server()
 
 import mlflow
@@ -109,10 +109,10 @@ from mlflow.exceptions import MlflowException
 from mlflow.genai import datasets
 from mlflow.genai.scorers import delete_scorer, list_scorers
 
-# Importing setup configures the tracking URI + experiment and (as a side
+# Importing common configures the tracking URI + experiment and (as a side
 # effect) registers the research-agent prompt v1 if it is missing.
-import setup
-from setup import (
+import common
+from common import (
     PROMPT_NAME,
     SCENARIO_DATASET_NAME,
     experiment,
@@ -148,10 +148,10 @@ def _reset():
             print(f"  deleted scorer '{name}' (all versions)")
         except MlflowException as e:
             print(f"  scorer '{name}' not present ({type(e).__name__})")
-    # setup's per-process "already registered" guards would otherwise stop the
+    # common's per-process "already registered" guards would otherwise stop the
     # later seed from re-registering has_sources after we just deleted it.
-    setup._has_sources_registered = False
-    setup._conciseness_registered = False
+    common._has_sources_registered = False
+    common._conciseness_registered = False
 
     # --- traces ----------------------------------------------------------
     # delete_traces caps each call at max_traces; loop until the experiment is
@@ -175,7 +175,7 @@ def _reset():
 
     # --- prompt ----------------------------------------------------------
     # Delete the ENTIRE research-agent prompt (all versions). The baseline must
-    # reflect the current (verbose) setup.SYSTEM_PROMPT_V1, but the old reset
+    # reflect the current (verbose) common.SYSTEM_PROMPT_V1, but the old reset
     # only kept v1 in place — so a stale v1 template would survive. Deleting the
     # whole prompt here lets _seed re-register from the in-code template; on the
     # OSS sqlite store this also resets version numbering back to 1.
@@ -237,12 +237,12 @@ def _seed():
     print("  registered 'has_sources' judge")
 
     # _reset deleted the whole prompt, so re-register the baseline directly from
-    # the current (verbose) setup.SYSTEM_PROMPT_V1. This guarantees the LATEST
+    # the current (verbose) common.SYSTEM_PROMPT_V1. This guarantees the LATEST
     # prompt template — what 01-trace loads via latest_prompt() — is the verbose
     # baseline, regardless of any prompt that existed before this reset.
     pv = mlflow.genai.register_prompt(
         name=PROMPT_NAME,
-        template=setup.SYSTEM_PROMPT_V1,
+        template=common.SYSTEM_PROMPT_V1,
         commit_message="baseline: verbose research assistant",
     )
     print(f"  registered baseline prompt '{PROMPT_NAME}' v{pv.version}")
@@ -264,7 +264,7 @@ def _summary():
 
     # Confirm the LATEST prompt (what 01-trace loads) is the verbose baseline.
     latest = mlflow.genai.load_prompt(PROMPT_NAME)
-    is_verbose = latest.template == setup.SYSTEM_PROMPT_V1
+    is_verbose = latest.template == common.SYSTEM_PROMPT_V1
     print(f"  baseline prompt version (latest): v{latest.version}")
     print(f"  baseline template == verbose SYSTEM_PROMPT_V1: {is_verbose}")
 
@@ -278,7 +278,7 @@ def _summary():
 
 def main():
     print("=" * 60)
-    print(f"RESET experiment '{setup.EXPERIMENT_NAME}' (id={EID})")
+    print(f"RESET experiment '{common.EXPERIMENT_NAME}' (id={EID})")
     print("=" * 60)
     _reset()
     print("\nSEED clean state")

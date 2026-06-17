@@ -17,7 +17,7 @@ No traces and no scoring happen here — see 02-assess.py for the A phase.
 
 from mlflow.genai.scorers import list_scorers
 
-from setup import experiment, get_conciseness_scorer
+from common import experiment, get_conciseness_scorer
 
 # Get-or-register the conciseness judge as an experiment scorer. On the clean
 # state this registers v1 (the generic judge); on a re-run it just fetches it.

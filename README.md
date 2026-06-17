@@ -20,7 +20,7 @@ Run every script with `uv run`:
 uv run 00-setup.py
 ```
 
-`setup.py` loads your `OPENAI_API_KEY` automatically from `~/.env` (an already-exported key still wins), so no manual `export` is needed. The key is required for the LLM judge and the agent; seeding and the dataset test do not need it.
+`common.py` loads your `OPENAI_API_KEY` automatically from `~/.env` (an already-exported key still wins), so no manual `export` is needed. The key is required for the LLM judge and the agent; seeding and the dataset test do not need it.
 
 There is **no manual MLflow server to start**. `uv run 00-setup.py` resets the experiment to a clean state *and* auto-starts a local sqlite-backed MLflow server on `:5000` (detached, so the later scripts reuse it). If a server is already up, it is left alone.
 
@@ -63,7 +63,7 @@ Open <http://localhost:5000> and browse the `costar-research-agent` experiment:
 ```
 ├── README.md              # This file
 ├── pyproject.toml         # uv project + pinned dependencies (uv.lock alongside)
-├── setup.py               # Shared: agent factory, tools, MLflow experiment, scenarios, scorers
+├── common.py              # Shared: agent factory, tools, MLflow experiment, scenarios, scorers
 ├── conciseness_judge.py   # The generic conciseness judge (instructions + builder)
 ├── 00-setup.py            # Reset + seed the experiment; auto-start the MLflow server
 ├── 01-trace.py            # Loop 1 · Trace

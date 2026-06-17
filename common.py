@@ -343,7 +343,7 @@ def load_scenarios():
 def get_train_data():
     """Build optimize_prompts train_data from the eval dataset.
 
-    Lazy (not a module-level constant) so ``import setup`` performs no dataset
+    Lazy (not a module-level constant) so ``import common`` performs no dataset
     or tracking-server I/O; the result is cached for repeated callers.
     """
     return [
@@ -375,7 +375,7 @@ def has_sources(outputs) -> bool:
 # ---------------------------------------------------------------------------
 # CONCISENESS_INSTRUCTIONS and the judge construction now live in
 # conciseness_judge.py (single source of truth, imported above); the
-# constant is re-exported here so existing `from setup import
+# constant is re-exported here so existing `from common import
 # CONCISENESS_INSTRUCTIONS` callers keep working.
 CONCISENESS_SCORER_NAME = "conciseness"
 
@@ -394,7 +394,7 @@ def get_conciseness_scorer():
     Requires a SQL-backed tracking server. Registration does NOT call the model,
     so this works without an OpenAI key.
     """
-    # Imported locally (like get_scenario_dataset) so `import setup` stays light
+    # Imported locally (like get_scenario_dataset) so `import common` stays light
     # and doesn't pull in the judge stack just to use the dataset helpers.
     from mlflow.genai.scorers import get_scorer
     from mlflow.exceptions import MlflowException
@@ -451,7 +451,7 @@ def get_has_sources_scorer():
     Requires a SQL-backed tracking server. Registration does NOT call the model,
     so this works without an OpenAI key.
     """
-    # Imported locally (like get_conciseness_scorer) so `import setup` stays
+    # Imported locally (like get_conciseness_scorer) so `import common` stays
     # light and doesn't pull in the judge stack just to use the dataset helpers.
     from mlflow.genai.judges import make_judge
     from mlflow.genai.scorers import get_scorer
