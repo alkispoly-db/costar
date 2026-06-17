@@ -46,7 +46,16 @@ uv run 03-loop.py         # Refine the prompt for conciseness with the aligned j
 
 ### Alternative Refine engine: Claude Code
 
-By default the Refine phases use MLflow's `optimize_prompts()`, which rewrites the prompt text while treating tools and agent logic as fixed. Claude Code can be used as a more general optimization engine instead — it can read traces, inspect failure patterns, and go beyond prompt rewrites (rewrite tools, add tools, rewire agent logic). It is driven by the `costar-refine` skill under `.claude/skills/`, which evaluates each candidate prompt via `eval.py`. This requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and available as `claude` on your PATH.
+By default the Refine phases use MLflow's `optimize_prompts()`, which rewrites the prompt text while treating tools and agent logic as fixed. Claude Code can be used as a more general optimization engine instead — it can read traces, inspect failure patterns, and go beyond prompt rewrites (rewrite tools, add tools, rewire agent logic). It is driven by the `costar-refine` skill under `.claude/skills/`, which evaluates each candidate prompt via `eval.py`.
+
+Pass `--refine claude-code` to either Refine script to use it:
+
+```bash
+uv run 01-refine.py --refine claude-code
+uv run 03-loop.py --refine claude-code
+```
+
+This requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and available as `claude` on your PATH. It runs Claude Code headless and is noticeably slower than the default `metaprompt` engine.
 
 ## What you'll see in the MLflow UI
 
