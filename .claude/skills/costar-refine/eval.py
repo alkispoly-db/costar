@@ -8,24 +8,26 @@ Prints a JSON line with scores, e.g.:
 
 import json
 import sys
-from pathlib import Path
 
 import mlflow
-from mlflow.genai.scorers import Scorer
+from mlflow.genai.scorers import get_scorer
 
-from setup import SCENARIOS, create_agent, has_sources, run_scenarios
+from common import create_agent, experiment, has_sources, run_scenarios
 
-# Load the aligned conciseness judge if available
-judge_file = Path("_aligned_judge.json")
+# Load the aligned conciseness judge from the registry (loop 2 registers it as
+# the latest 'conciseness' version). If no such scorer is registered yet —
+# e.g. only loop 1 has run — fall back to scoring with just has_sources.
 scorers = [has_sources]
-if judge_file.exists():
-    aligned_judge = Scorer.model_validate_json(judge_file.read_text())
-    scorers.append(aligned_judge)
+try:
+    aligned = get_scorer(name="conciseness", experiment_id=experiment.experiment_id)
+    scorers.append(aligned)
+except Exception:
+    pass
 
 prompt_name, version = sys.argv[1], int(sys.argv[2])
 prompt = mlflow.genai.load_prompt(prompt_name, version=version)
 traces = run_scenarios(
-    create_agent(prompt.template), SCENARIOS, run_name=f"refine-eval-v{version}"
+    create_agent(prompt.template), run_name=f"refine-eval-v{version}"
 )
 result = mlflow.genai.evaluate(data=traces, scorers=scorers)
 scores = {
