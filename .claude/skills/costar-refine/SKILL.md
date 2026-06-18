@@ -42,9 +42,20 @@ Run the eval script from the skill directory with the prompt name and new versio
 uv run --no-project --python .venv -- python .claude/skills/costar-refine/eval.py <prompt_name> <version_number>
 ```
 
-Run this command in the FOREGROUND and WAIT for it to print its `EVAL_RESULT:` line
-before doing anything else. NEVER run the eval in the background. Do not end your turn
-while an eval is still running.
+**You are running in a HEADLESS, ONE-SHOT session. There is NO next turn: you will
+NOT be re-invoked, notified, woken up, or resumed.** Everything — including waiting for
+this eval — must happen in THIS single response.
+
+- Run the eval as ONE blocking FOREGROUND Bash command and WAIT for it to print its
+  `EVAL_RESULT:` line before doing anything else.
+- The eval takes a few minutes — set a long Bash timeout (e.g. `timeout: 600000` ms /
+  10 minutes) so it completes in the foreground. Do NOT background it to avoid a timeout.
+- NEVER use `run_in_background`, the Monitor tool, background tasks, or scheduled
+  wakeups, and NEVER say "I'll continue when it finishes". Anything you defer or
+  background WILL silently die and you WILL FAIL the task — there is no mechanism that
+  will wake you back up.
+- Do NOT end your turn while an eval is still running. Block on the single command until
+  the `EVAL_RESULT:` line appears, then read the real scores from that line.
 
 The script runs the agent on test scenarios and prints a JSON line with the scores, e.g.:
 ```
@@ -71,8 +82,10 @@ The `goal` you are given states a **TARGET pass rate for a named scorer** (e.g.
 ### Step 5: Save the result
 
 Write the best version number to `_refine_result.json`. This MUST be your LAST action,
-performed only after the eval has returned its `EVAL_RESULT:` line. Do not end your turn
-while an eval is still running — the file MUST exist before you finish.
+performed only after the eval has returned its `EVAL_RESULT:` line. Because this is a
+HEADLESS, ONE-SHOT session, you will NOT get another turn — so do not end your response
+until `_refine_result.json` exists on disk. The file MUST exist before you finish; if it
+does not, the task has failed.
 
 ```python
 import json
@@ -85,5 +98,11 @@ Path("_refine_result.json").write_text(json.dumps({"version": best_version}))
 - Only modify the prompt template text
 - Do NOT change tools, agent code, or evaluation logic
 - The prompt has no template variables — do not add {{ }} patterns
-- Do not run the eval asynchronously or end your turn waiting for a background task;
-  `_refine_result.json` must exist before you finish.
+- You are in a HEADLESS, ONE-SHOT session: there is no next turn, no wakeup, no resume.
+  NEVER use `run_in_background`, the Monitor tool, background tasks, scheduled wakeups, or
+  any "I'll continue when it finishes" deferral — anything deferred or backgrounded WILL
+  silently die and you WILL FAIL.
+- Run the eval as a single blocking FOREGROUND Bash command with a long (~10 minute /
+  600000 ms) timeout; do not end your turn while it runs.
+- Stop the instant the goal's target pass rate is met (see Step 4), then write
+  `_refine_result.json` in-turn as your final action. The file MUST exist before you finish.
